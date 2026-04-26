@@ -2,13 +2,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { asString, asStringArray } from '../chain/json';
 import {
-  BODY_KIND_BY_CHAIN_VALUE,
-  ORGANIZATION_STATUS_BY_CHAIN_VALUE,
-  PROPOSAL_STATUS_BY_CHAIN_VALUE,
-  PROPOSAL_TYPE_BY_CHAIN_VALUE,
-  ROLE_TYPE_BY_CHAIN_VALUE,
-} from '../chain/domain-maps';
+  toBodyKind,
+  toOrganizationStatus,
+  toProposalStatus,
+  toProposalType,
+  toRoleType,
+} from '../chain/governance-events';
 import { DatabaseService } from '../database/database.service';
+import {
+  DataStatus,
+  DecisionType,
+  GovernanceEventName,
+  GraphEdgeType,
+  GraphNodeType,
+  OrganizationStatus,
+  ProposalStatus,
+} from '@isonia/types';
 
 interface RawEventRow {
   readonly id: string;
@@ -16,9 +25,9 @@ interface RawEventRow {
   readonly block_number: string;
   readonly tx_hash: string;
   readonly log_index: number;
-  readonly event_name: string;
+  readonly event_name: GovernanceEventName;
   readonly args: Record<string, unknown>;
-  readonly status: string;
+  readonly status: DataStatus;
   readonly block_timestamp: string | null;
 }
 
@@ -93,39 +102,39 @@ export class ProjectionService {
 
   private async applyEvent(client: PoolClient, event: RawEventRow): Promise<void> {
     switch (event.event_name) {
-      case 'OrganizationCreated':
+      case GovernanceEventName.OrganizationCreated:
         return this.organizationCreated(client, event);
-      case 'OrganizationUpdated':
+      case GovernanceEventName.OrganizationUpdated:
         return this.organizationUpdated(client, event);
-      case 'OrganizationStatusChanged':
+      case GovernanceEventName.OrganizationStatusChanged:
         return this.organizationStatusChanged(client, event);
-      case 'BodyCreated':
+      case GovernanceEventName.BodyCreated:
         return this.bodyCreated(client, event);
-      case 'BodyUpdated':
+      case GovernanceEventName.BodyUpdated:
         return this.bodyUpdated(client, event);
-      case 'RoleCreated':
+      case GovernanceEventName.RoleCreated:
         return this.roleCreated(client, event);
-      case 'RoleUpdated':
+      case GovernanceEventName.RoleUpdated:
         return this.roleUpdated(client, event);
-      case 'MandateAssigned':
+      case GovernanceEventName.MandateAssigned:
         return this.mandateAssigned(client, event);
-      case 'MandateRevoked':
+      case GovernanceEventName.MandateRevoked:
         return this.mandateRevoked(client, event);
-      case 'PolicyRuleSet':
+      case GovernanceEventName.PolicyRuleSet:
         return this.policyRuleSet(client, event);
-      case 'ProposalCreated':
+      case GovernanceEventName.ProposalCreated:
         return this.proposalCreated(client, event);
-      case 'ProposalApproved':
-        return this.proposalDecision(client, event, 'approve');
-      case 'ProposalVetoed':
-        return this.proposalDecision(client, event, 'veto');
-      case 'ProposalQueued':
+      case GovernanceEventName.ProposalApproved:
+        return this.proposalDecision(client, event, DecisionType.Approve);
+      case GovernanceEventName.ProposalVetoed:
+        return this.proposalDecision(client, event, DecisionType.Veto);
+      case GovernanceEventName.ProposalQueued:
         return this.proposalQueued(client, event);
-      case 'ProposalExecuted':
+      case GovernanceEventName.ProposalExecuted:
         return this.proposalExecuted(client, event);
-      case 'ProposalCancelled':
+      case GovernanceEventName.ProposalCancelled:
         return this.proposalCancelled(client, event);
-      case 'ProposalStatusChanged':
+      case GovernanceEventName.ProposalStatusChanged:
         return this.proposalStatusChanged(client, event);
       default:
         return undefined;
@@ -134,15 +143,17 @@ export class ProjectionService {
 
   private async organizationCreated(client: PoolClient, event: RawEventRow): Promise<void> {
     const args = event.args;
-    const orgId = asString(args.orgId);
-    const slug = asString(args.slug);
+    const orgId = stringArg(args, 'orgId');
+    const slug = stringArg(args, 'slug');
+    const adminAddress = arg(args, 'adminAddress', 'admin');
+    const metadataUri = arg(args, 'metadataUri', 'metadataURI');
     await client.query(
       `
         insert into organizations (
           chain_id, org_id, admin_address, slug, name, metadata_uri, status,
           created_block, created_tx_hash, data_status
         )
-        values ($1, $2, lower($3), $4, $5, $6, 'active', $7, $8, $9)
+        values ($1, $2, lower($3), $4, $5, $6, $7, $8, $9, $10)
         on conflict (chain_id, org_id) do update set
           admin_address = excluded.admin_address,
           slug = excluded.slug,
@@ -152,27 +163,38 @@ export class ProjectionService {
           data_status = excluded.data_status,
           updated_at = now()
       `,
-      [event.chain_id, orgId, args.admin, slug, fallbackName('Organization', orgId, slug), args.metadataURI, event.block_number, event.tx_hash, event.status],
+      [
+        event.chain_id,
+        orgId,
+        adminAddress,
+        slug,
+        fallbackName('Organization', orgId, slug),
+        metadataUri,
+        OrganizationStatus.Active,
+        event.block_number,
+        event.tx_hash,
+        event.status,
+      ],
     );
   }
 
   private async organizationUpdated(client: PoolClient, event: RawEventRow): Promise<void> {
     await client.query(
       `update organizations set metadata_uri = $3, updated_at = now() where chain_id = $1 and org_id = $2`,
-      [event.chain_id, asString(event.args.orgId), event.args.metadataURI],
+      [event.chain_id, stringArg(event.args, 'orgId'), arg(event.args, 'metadataUri', 'metadataURI')],
     );
   }
 
   private async organizationStatusChanged(client: PoolClient, event: RawEventRow): Promise<void> {
     await client.query(
       `update organizations set status = $3, updated_at = now() where chain_id = $1 and org_id = $2`,
-      [event.chain_id, asString(event.args.orgId), mapValue(ORGANIZATION_STATUS_BY_CHAIN_VALUE, event.args.status, 'unknown')],
+      [event.chain_id, stringArg(event.args, 'orgId'), toOrganizationStatus(arg(event.args, 'status'))],
     );
   }
 
   private async bodyCreated(client: PoolClient, event: RawEventRow): Promise<void> {
-    const bodyId = asString(event.args.bodyId);
-    const orgId = asString(event.args.orgId);
+    const bodyId = stringArg(event.args, 'bodyId');
+    const orgId = stringArg(event.args, 'orgId');
     await client.query(
       `
         insert into bodies (chain_id, body_id, org_id, kind, name, metadata_uri, active, created_block, data_status)
@@ -190,28 +212,34 @@ export class ProjectionService {
         event.chain_id,
         bodyId,
         orgId,
-        mapValue(BODY_KIND_BY_CHAIN_VALUE, event.args.kind, 'custom'),
+        toBodyKind(arg(event.args, 'kind')),
         fallbackName('Body', bodyId),
-        event.args.metadataURI,
+        arg(event.args, 'metadataUri', 'metadataURI'),
         event.block_number,
         event.status,
       ],
     );
-    await upsertEdge(client, event, orgId, 'organization', orgId, 'body', bodyId, 'contains', undefined);
+    await upsertEdge(client, event, orgId, GraphNodeType.Organization, orgId, GraphNodeType.Body, bodyId, GraphEdgeType.Contains, undefined);
   }
 
   private async bodyUpdated(client: PoolClient, event: RawEventRow): Promise<void> {
     await client.query(
       `update bodies set active = $4, metadata_uri = $5, updated_at = now() where chain_id = $1 and org_id = $2 and body_id = $3`,
-      [event.chain_id, asString(event.args.orgId), asString(event.args.bodyId), event.args.active, event.args.metadataURI],
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'bodyId'),
+        Boolean(arg(event.args, 'active')),
+        arg(event.args, 'metadataUri', 'metadataURI'),
+      ],
     );
   }
 
   private async roleCreated(client: PoolClient, event: RawEventRow): Promise<void> {
-    const roleId = asString(event.args.roleId);
-    const orgId = asString(event.args.orgId);
-    const bodyId = asString(event.args.bodyId);
-    const roleType = mapValue(ROLE_TYPE_BY_CHAIN_VALUE, event.args.roleType, 'unknown');
+    const roleId = stringArg(event.args, 'roleId');
+    const orgId = stringArg(event.args, 'orgId');
+    const bodyId = stringArg(event.args, 'bodyId');
+    const roleType = toRoleType(arg(event.args, 'roleType'));
     await client.query(
       `
         insert into roles (chain_id, role_id, org_id, body_id, role_type, name, metadata_uri, active, data_status)
@@ -226,24 +254,39 @@ export class ProjectionService {
           data_status = excluded.data_status,
           updated_at = now()
       `,
-      [event.chain_id, roleId, orgId, bodyId, roleType, fallbackName('Role', roleId, roleType), event.args.metadataURI, event.status],
+      [
+        event.chain_id,
+        roleId,
+        orgId,
+        bodyId,
+        roleType,
+        fallbackName('Role', roleId, roleType),
+        arg(event.args, 'metadataUri', 'metadataURI'),
+        event.status,
+      ],
     );
-    await upsertEdge(client, event, orgId, 'body', bodyId, 'role', roleId, 'contains', roleType);
+    await upsertEdge(client, event, orgId, GraphNodeType.Body, bodyId, GraphNodeType.Role, roleId, GraphEdgeType.Contains, roleType);
   }
 
   private async roleUpdated(client: PoolClient, event: RawEventRow): Promise<void> {
     await client.query(
       `update roles set active = $4, metadata_uri = $5, updated_at = now() where chain_id = $1 and org_id = $2 and role_id = $3`,
-      [event.chain_id, asString(event.args.orgId), asString(event.args.roleId), event.args.active, event.args.metadataURI],
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'roleId'),
+        Boolean(arg(event.args, 'active')),
+        arg(event.args, 'metadataUri', 'metadataURI'),
+      ],
     );
   }
 
   private async mandateAssigned(client: PoolClient, event: RawEventRow): Promise<void> {
-    const mandateId = asString(event.args.mandateId);
-    const orgId = asString(event.args.orgId);
-    const roleId = asString(event.args.roleId);
-    const bodyId = asString(event.args.bodyId);
-    const holder = String(event.args.holder).toLowerCase();
+    const mandateId = stringArg(event.args, 'mandateId');
+    const orgId = stringArg(event.args, 'orgId');
+    const roleId = stringArg(event.args, 'roleId');
+    const bodyId = stringArg(event.args, 'bodyId');
+    const holder = stringArg(event.args, 'holderAddress', 'holder').toLowerCase();
     await client.query(
       `
         insert into mandates (
@@ -271,30 +314,30 @@ export class ProjectionService {
         bodyId,
         roleId,
         holder,
-        asString(event.args.startTime),
-        asString(event.args.endTime),
-        asString(event.args.proposalTypeMask),
-        asString(event.args.spendingLimit),
+        stringArg(event.args, 'startTime'),
+        stringArg(event.args, 'endTime'),
+        stringArg(event.args, 'proposalTypeMask'),
+        stringArg(event.args, 'spendingLimit'),
         event.status,
       ],
     );
-    await upsertEdge(client, event, orgId, 'holder', holder, 'role', roleId, 'holds', undefined);
+    await upsertEdge(client, event, orgId, GraphNodeType.Holder, holder, GraphNodeType.Role, roleId, GraphEdgeType.Holds, undefined);
   }
 
   private async mandateRevoked(client: PoolClient, event: RawEventRow): Promise<void> {
     await client.query(
       `update mandates set active = false, revoked = true, updated_at = now() where chain_id = $1 and org_id = $2 and mandate_id = $3`,
-      [event.chain_id, asString(event.args.orgId), asString(event.args.mandateId)],
+      [event.chain_id, stringArg(event.args, 'orgId'), stringArg(event.args, 'mandateId')],
     );
   }
 
   private async policyRuleSet(client: PoolClient, event: RawEventRow): Promise<void> {
-    const orgId = asString(event.args.orgId);
-    const proposalType = mapValue(PROPOSAL_TYPE_BY_CHAIN_VALUE, event.args.proposalType, 'unknown');
-    const version = asString(event.args.version);
-    const requiredApprovalBodies = asStringArray(event.args.requiredApprovalBodies);
-    const vetoBodies = asStringArray(event.args.vetoBodies);
-    const executorBody = asString(event.args.executorBody);
+    const orgId = stringArg(event.args, 'orgId');
+    const proposalType = toProposalType(arg(event.args, 'proposalType'));
+    const version = stringArg(event.args, 'version');
+    const requiredApprovalBodies = asStringArray(arg(event.args, 'requiredApprovalBodies'));
+    const vetoBodies = asStringArray(arg(event.args, 'vetoBodies'));
+    const executorBody = stringArg(event.args, 'executorBody');
     const params = [
       event.chain_id,
       orgId,
@@ -303,8 +346,8 @@ export class ProjectionService {
       JSON.stringify(requiredApprovalBodies),
       JSON.stringify(vetoBodies),
       executorBody === '0' ? null : executorBody,
-      asString(event.args.timelockSeconds),
-      Boolean(event.args.enabled),
+      stringArg(event.args, 'timelockSeconds'),
+      Boolean(arg(event.args, 'enabled')),
       event.status,
     ];
     await client.query(
@@ -345,31 +388,51 @@ export class ProjectionService {
       params,
     );
     for (const bodyId of requiredApprovalBodies) {
-      await upsertEdge(client, event, orgId, 'proposal_type', proposalType, 'body', bodyId, 'requires_approval', undefined);
+      await upsertEdge(
+        client,
+        event,
+        orgId,
+        GraphNodeType.ProposalType,
+        proposalType,
+        GraphNodeType.Body,
+        bodyId,
+        GraphEdgeType.RequiresApproval,
+        undefined,
+      );
     }
     for (const bodyId of vetoBodies) {
-      await upsertEdge(client, event, orgId, 'proposal_type', proposalType, 'body', bodyId, 'can_veto', undefined);
+      await upsertEdge(client, event, orgId, GraphNodeType.ProposalType, proposalType, GraphNodeType.Body, bodyId, GraphEdgeType.CanVeto, undefined);
     }
     if (executorBody !== '0') {
-      await upsertEdge(client, event, orgId, 'proposal_type', proposalType, 'body', executorBody, 'can_execute', undefined);
+      await upsertEdge(
+        client,
+        event,
+        orgId,
+        GraphNodeType.ProposalType,
+        proposalType,
+        GraphNodeType.Body,
+        executorBody,
+        GraphEdgeType.CanExecute,
+        undefined,
+      );
     }
   }
 
   private async proposalCreated(client: PoolClient, event: RawEventRow): Promise<void> {
-    const proposalId = asString(event.args.proposalId);
-    const orgId = asString(event.args.orgId);
-    const proposalType = mapValue(PROPOSAL_TYPE_BY_CHAIN_VALUE, event.args.proposalType, 'unknown');
-    const metadataUri = asString(event.args.metadataURI);
+    const proposalId = stringArg(event.args, 'proposalId');
+    const orgId = stringArg(event.args, 'orgId');
+    const proposalType = toProposalType(arg(event.args, 'proposalType'));
+    const metadataUri = stringArg(event.args, 'metadataUri', 'metadataURI');
     const policy = await client.query(
       `
         select required_approval_bodies
         from policy_rules
         where chain_id = $1 and org_id = $2 and proposal_type = $3 and version = $4
       `,
-      [event.chain_id, orgId, proposalType, asString(event.args.policyVersion)],
+      [event.chain_id, orgId, proposalType, stringArg(event.args, 'policyVersion')],
     );
     const requiredApprovalBodies = (policy.rows[0]?.required_approval_bodies ?? []) as unknown[];
-    const initialStatus = requiredApprovalBodies.length === 0 ? 'approved' : 'under_review';
+    const initialStatus = requiredApprovalBodies.length === 0 ? ProposalStatus.Approved : ProposalStatus.UnderReview;
     await client.query(
       `
         insert into proposals (
@@ -396,12 +459,12 @@ export class ProjectionService {
         proposalId,
         orgId,
         proposalType,
-        asString(event.args.policyVersion),
+        stringArg(event.args, 'policyVersion'),
         fallbackName('Proposal', proposalId, metadataUri),
-        event.args.target,
-        asString(event.args.value),
-        event.args.dataHash,
-        event.args.creator,
+        arg(event.args, 'targetAddress', 'target'),
+        stringArg(event.args, 'value'),
+        arg(event.args, 'dataHash'),
+        arg(event.args, 'creatorAddress', 'creator'),
         initialStatus,
         event.block_number,
         event.tx_hash,
@@ -410,10 +473,20 @@ export class ProjectionService {
         event.status,
       ],
     );
-    await upsertEdge(client, event, orgId, 'proposal', proposalId, 'proposal_type', proposalType, 'contains', undefined);
+    await upsertEdge(
+      client,
+      event,
+      orgId,
+      GraphNodeType.Proposal,
+      proposalId,
+      GraphNodeType.ProposalType,
+      proposalType,
+      GraphEdgeType.Contains,
+      undefined,
+    );
   }
 
-  private async proposalDecision(client: PoolClient, event: RawEventRow, decisionType: 'approve' | 'veto'): Promise<void> {
+  private async proposalDecision(client: PoolClient, event: RawEventRow, decisionType: DecisionType): Promise<void> {
     await client.query(
       `
         insert into proposal_decisions (
@@ -431,10 +504,10 @@ export class ProjectionService {
       `,
       [
         event.chain_id,
-        asString(event.args.orgId),
-        asString(event.args.proposalId),
-        asString(event.args.bodyId),
-        event.args.actor,
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'proposalId'),
+        stringArg(event.args, 'bodyId'),
+        arg(event.args, 'actorAddress', 'actor'),
         decisionType,
         event.tx_hash,
         event.block_number,
@@ -449,13 +522,20 @@ export class ProjectionService {
     await client.query(
       `
         update proposals
-        set status = 'queued',
-            queued_at_chain = $4,
-            executable_at_chain = $5,
+        set status = $4,
+            queued_at_chain = $5,
+            executable_at_chain = $6,
             updated_at = now()
         where chain_id = $1 and org_id = $2 and proposal_id = $3
       `,
-      [event.chain_id, asString(event.args.orgId), asString(event.args.proposalId), asString(event.args.queuedAt), asString(event.args.executableAt)],
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'proposalId'),
+        ProposalStatus.Queued,
+        stringArg(event.args, 'queuedAt'),
+        stringArg(event.args, 'executableAt'),
+      ],
     );
   }
 
@@ -463,19 +543,19 @@ export class ProjectionService {
     await client.query(
       `
         update proposals
-        set status = 'executed',
-            executed_at_chain = $4,
+        set status = $4,
+            executed_at_chain = $5,
             updated_at = now()
         where chain_id = $1 and org_id = $2 and proposal_id = $3
       `,
-      [event.chain_id, asString(event.args.orgId), asString(event.args.proposalId), event.block_timestamp ?? '0'],
+      [event.chain_id, stringArg(event.args, 'orgId'), stringArg(event.args, 'proposalId'), ProposalStatus.Executed, event.block_timestamp ?? '0'],
     );
   }
 
   private async proposalCancelled(client: PoolClient, event: RawEventRow): Promise<void> {
     await client.query(
-      `update proposals set status = 'cancelled', updated_at = now() where chain_id = $1 and org_id = $2 and proposal_id = $3`,
-      [event.chain_id, asString(event.args.orgId), asString(event.args.proposalId)],
+      `update proposals set status = $4, updated_at = now() where chain_id = $1 and org_id = $2 and proposal_id = $3`,
+      [event.chain_id, stringArg(event.args, 'orgId'), stringArg(event.args, 'proposalId'), ProposalStatus.Cancelled],
     );
   }
 
@@ -484,16 +564,12 @@ export class ProjectionService {
       `update proposals set status = $4, updated_at = now() where chain_id = $1 and org_id = $2 and proposal_id = $3`,
       [
         event.chain_id,
-        asString(event.args.orgId),
-        asString(event.args.proposalId),
-        mapValue(PROPOSAL_STATUS_BY_CHAIN_VALUE, event.args.newStatus, 'unknown'),
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'proposalId'),
+        toProposalStatus(arg(event.args, 'newStatus')),
       ],
     );
   }
-}
-
-function mapValue(map: Record<string, string>, value: unknown, fallback: string): string {
-  return map[asString(value)] ?? fallback;
 }
 
 function fallbackName(prefix: string, id: string, hint?: string): string {
@@ -507,11 +583,11 @@ async function upsertEdge(
   client: PoolClient,
   event: RawEventRow,
   orgId: string,
-  sourceType: string,
+  sourceType: GraphNodeType,
   sourceId: string,
-  targetType: string,
+  targetType: GraphNodeType,
   targetId: string,
-  edgeType: string,
+  edgeType: GraphEdgeType,
   label: string | undefined,
 ): Promise<void> {
   await client.query(
@@ -526,4 +602,16 @@ async function upsertEdge(
     `,
     [event.chain_id, orgId, sourceType, sourceId, targetType, targetId, edgeType, label, event.status],
   );
+}
+
+function arg(args: Record<string, unknown>, key: string, legacyKey?: string): unknown {
+  const value = args[key] ?? (legacyKey ? args[legacyKey] : undefined);
+  if (value === undefined || value === null) {
+    throw new Error(`Missing event argument: ${key}`);
+  }
+  return value;
+}
+
+function stringArg(args: Record<string, unknown>, key: string, legacyKey?: string): string {
+  return asString(arg(args, key, legacyKey));
 }

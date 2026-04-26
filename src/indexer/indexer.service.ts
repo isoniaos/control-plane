@@ -3,12 +3,8 @@ import { createPublicClient, decodeEventLog, http, type Address, type Log } from
 import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
 import { ISONIA_EVENT_ABI } from '../chain/isonia-abi';
+import { type DecodedGovernanceLog, normalizeDecodedGovernanceLog } from '../chain/governance-events';
 import { toJsonValue } from '../chain/json';
-
-interface DecodedGovernanceLog {
-  readonly eventName: string;
-  readonly args: Record<string, unknown>;
-}
 
 @Injectable()
 export class IndexerService {
@@ -94,10 +90,7 @@ export class IndexerService {
         topics: log.topics,
         data: log.data,
       });
-      return {
-        eventName: decoded.eventName,
-        args: toJsonValue(decoded.args) as Record<string, unknown>,
-      };
+      return normalizeDecodedGovernanceLog(decoded.eventName, toJsonValue(decoded.args) as Record<string, unknown>);
     } catch {
       return undefined;
     }
