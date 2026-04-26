@@ -1,8 +1,8 @@
 {
   "name": "control-plane",
-  "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "version": "0.1.0",
+  "description": "Control plane for Isonia OS",
+  "author": "Isonia OS Team <info@isoniaos.com>",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
