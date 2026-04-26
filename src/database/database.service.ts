@@ -58,6 +58,24 @@ export class DatabaseService implements OnModuleDestroy {
     `);
   }
 
+  async resetAll(): Promise<void> {
+    await this.pool.query(`
+      truncate table
+        raw_events,
+        chain_cursors,
+        organizations,
+        bodies,
+        roles,
+        mandates,
+        policy_rules,
+        current_policy_rules,
+        proposals,
+        proposal_decisions,
+        governance_edges
+      restart identity cascade;
+    `);
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.pool.end();
   }
