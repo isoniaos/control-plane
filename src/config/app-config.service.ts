@@ -10,12 +10,28 @@ export class AppConfigService {
   readonly nodeEnv = this.readString('NODE_ENV', 'development');
   readonly port = this.readNumber('API_PORT', this.readNumber('PORT', 3000));
   readonly chainId = this.readNumber('CHAIN_ID', 31337);
-  readonly rpcUrl = this.readString('RPC_URL', this.readString('RPC_HTTP_URL', 'http://127.0.0.1:8545'));
+  readonly rpcUrl = this.readString(
+    'RPC_URL',
+    this.readString('RPC_HTTP_URL', 'http://127.0.0.1:8545'),
+  );
   readonly startBlock = BigInt(this.readNumber('START_BLOCK', 0));
-  readonly confirmations = this.readNumber('CONFIRMATIONS', this.readNumber('CONFIRMATION_DEPTH', 0));
-  readonly blockRangeSize = BigInt(this.readNumber('BLOCK_RANGE_SIZE', this.readNumber('MAX_BLOCK_RANGE', 1_000)));
+  readonly confirmations = this.readNumber(
+    'CONFIRMATIONS',
+    this.readNumber('CONFIRMATION_DEPTH', 0),
+  );
+  readonly blockRangeSize = BigInt(
+    this.readNumber(
+      'BLOCK_RANGE_SIZE',
+      this.readNumber('MAX_BLOCK_RANGE', 1_000),
+    ),
+  );
   readonly pollIntervalMs = this.readNumber('POLL_INTERVAL_MS', 5_000);
   readonly databaseUrl = this.readDatabaseUrl();
+  readonly corsOrigins = this.readStringList('CORS_ORIGINS', [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ]);
+  readonly corsCredentials = this.readBoolean('CORS_CREDENTIALS', false);
 
   readonly contracts: ContractConfig = {
     govCoreAddress: this.readAddress('GOV_CORE_ADDRESS'),
@@ -23,9 +39,10 @@ export class AppConfigService {
   };
 
   get contractAddresses(): `0x${string}`[] {
-    return [this.contracts.govCoreAddress, this.contracts.govProposalsAddress].filter(
-      (address): address is `0x${string}` => Boolean(address),
-    );
+    return [
+      this.contracts.govCoreAddress,
+      this.contracts.govProposalsAddress,
+    ].filter((address): address is `0x${string}` => Boolean(address));
   }
 
   private readString(name: string, fallback?: string): string {
@@ -52,6 +69,32 @@ export class AppConfigService {
       throw new Error(`Invalid numeric environment variable: ${name}`);
     }
     return value;
+  }
+
+  private readBoolean(name: string, fallback: boolean): boolean {
+    const raw = process.env[name];
+    if (raw === undefined || raw === '') {
+      return fallback;
+    }
+    const value = raw.toLowerCase();
+    if (['true', '1', 'yes'].includes(value)) {
+      return true;
+    }
+    if (['false', '0', 'no'].includes(value)) {
+      return false;
+    }
+    throw new Error(`Invalid boolean environment variable: ${name}`);
+  }
+
+  private readStringList(name: string, fallback: readonly string[]): string[] {
+    const raw = process.env[name];
+    if (raw === undefined || raw === '') {
+      return [...fallback];
+    }
+    return raw
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
   }
 
   private readAddress(name: string): `0x${string}` | undefined {

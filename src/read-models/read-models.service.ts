@@ -82,7 +82,9 @@ export class ReadModelsService {
     return normalizeRows<OrganizationDto>(result.rows)[0];
   }
 
-  async getOverview(orgId: string): Promise<OrganizationOverviewDto | undefined> {
+  async getOverview(
+    orgId: string,
+  ): Promise<OrganizationOverviewDto | undefined> {
     const organization = await this.getOrganization(orgId);
     if (!organization) {
       return undefined;
@@ -95,7 +97,15 @@ export class ReadModelsService {
           (select count(*)::int from mandates where org_id = $1 and active = true and revoked = false) as "activeMandates",
           (select count(*)::int from proposals where org_id = $1 and status = any($2)) as "activeProposals"
       `,
-      [orgId, [ProposalStatus.Created, ProposalStatus.UnderReview, ProposalStatus.Approved, ProposalStatus.Queued]],
+      [
+        orgId,
+        [
+          ProposalStatus.Created,
+          ProposalStatus.UnderReview,
+          ProposalStatus.Approved,
+          ProposalStatus.Queued,
+        ],
+      ],
     );
     const latestProposals = await this.getProposals(orgId, 5);
     return {
@@ -152,7 +162,10 @@ export class ReadModelsService {
     return normalizeRows<MandateDto>(result.rows);
   }
 
-  async getHolderMandates(orgId: string, address: string): Promise<MandateDto[]> {
+  async getHolderMandates(
+    orgId: string,
+    address: string,
+  ): Promise<MandateDto[]> {
     const result = await this.db.query(
       `
         select chain_id::int as "chainId", org_id as "orgId", mandate_id as "mandateId",
@@ -169,7 +182,10 @@ export class ReadModelsService {
     return normalizeRows<MandateDto>(result.rows);
   }
 
-  async getProposals(orgId: string, limit = 100): Promise<ProposalSummaryDto[]> {
+  async getProposals(
+    orgId: string,
+    limit = 100,
+  ): Promise<ProposalSummaryDto[]> {
     const result = await this.db.query(
       `
         select chain_id::int as "chainId", org_id as "orgId", proposal_id as "proposalId",
@@ -186,7 +202,10 @@ export class ReadModelsService {
     return normalizeRows<ProposalSummaryDto>(result.rows);
   }
 
-  async getProposal(orgId: string, proposalId: string): Promise<ProposalDto | undefined> {
+  async getProposal(
+    orgId: string,
+    proposalId: string,
+  ): Promise<ProposalDto | undefined> {
     const result = await this.db.query(
       `
         select chain_id::int as "chainId", org_id as "orgId", proposal_id as "proposalId",
@@ -205,7 +224,10 @@ export class ReadModelsService {
     return normalizeRows<ProposalDto>(result.rows)[0];
   }
 
-  async getProposalRoute(orgId: string, proposalId: string): Promise<ProposalRouteExplanationDto | undefined> {
+  async getProposalRoute(
+    orgId: string,
+    proposalId: string,
+  ): Promise<ProposalRouteExplanationDto | undefined> {
     const proposalResult = await this.db.query(
       `select * from proposals where org_id = $1 and proposal_id = $2`,
       [orgId, proposalId],
@@ -221,26 +243,38 @@ export class ReadModelsService {
         from policy_rules
         where chain_id = $1 and org_id = $2 and proposal_type = $3 and version = $4
       `,
-      [proposal.chain_id, orgId, proposal.proposal_type, proposal.policy_version],
+      [
+        proposal.chain_id,
+        orgId,
+        proposal.proposal_type,
+        proposal.policy_version,
+      ],
     );
     const policy = policyResult.rows[0] as PolicyRuleRow | undefined;
-    const requiredBodies = policy ? asStringArray(policy.required_approval_bodies) : [];
+    const requiredBodies = policy
+      ? asStringArray(policy.required_approval_bodies)
+      : [];
     const vetoBodies = policy ? asStringArray(policy.veto_bodies) : [];
     const bodyNames = await this.getBodyNameMap(orgId);
-    const decisions = await this.getDecisionMap(proposal.chain_id, proposalId);
+    const decisions = await this.getDecisionMap(
+      proposal.chain_id,
+      orgId,
+      proposalId,
+    );
 
-    const requiredApprovalBodies: RouteBodyRequirementDto[] = requiredBodies.map((bodyId) => {
-      const decision = decisions.get(`${bodyId}:${DecisionType.Approve}`);
-      return normalizeRow<RouteBodyRequirementDto>({
-        bodyId,
-        bodyName: bodyNames.get(bodyId) ?? `Body #${bodyId}`,
-        required: true,
-        approved: Boolean(decision),
-        approvedBy: decision?.actor_address,
-        approvedAtChain: decision?.decided_at_chain,
-        txHash: decision?.tx_hash,
+    const requiredApprovalBodies: RouteBodyRequirementDto[] =
+      requiredBodies.map((bodyId) => {
+        const decision = decisions.get(`${bodyId}:${DecisionType.Approve}`);
+        return normalizeRow<RouteBodyRequirementDto>({
+          bodyId,
+          bodyName: bodyNames.get(bodyId) ?? `Body #${bodyId}`,
+          required: true,
+          approved: Boolean(decision),
+          approvedBy: decision?.actor_address,
+          approvedAtChain: decision?.decided_at_chain,
+          txHash: decision?.tx_hash,
+        });
       });
-    });
 
     const routeVetoBodies: RouteBodyVetoDto[] = vetoBodies.map((bodyId) => {
       const decision = decisions.get(`${bodyId}:${DecisionType.Veto}`);
@@ -257,37 +291,84 @@ export class ReadModelsService {
 
     const nowSeconds = Math.floor(Date.now() / 1_000);
     const timelockSeconds = Number(policy?.timelock_seconds ?? 0);
-    const executableAt = proposal.executable_at_chain ? Number(proposal.executable_at_chain) : undefined;
-    const missingApproval = requiredApprovalBodies.find((body) => !body.approved);
+    const executableAt = proposal.executable_at_chain
+      ? Number(proposal.executable_at_chain)
+      : undefined;
+    const missingApproval = requiredApprovalBodies.find(
+      (body) => !body.approved,
+    );
     const vetoed = routeVetoBodies.find((body) => body.vetoed);
     const blockedReasons: RouteBlockedReasonDto[] = [];
     if (!policy) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.PolicySnapshotMissing, 'Proposal policy snapshot is missing from projections.'));
+      blockedReasons.push(
+        reason(
+          RouteBlockedReasonCode.PolicySnapshotMissing,
+          'Proposal policy snapshot is missing from projections.',
+        ),
+      );
     } else if (!policy.enabled) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.PolicyDisabled, 'Policy rule is disabled.'));
+      blockedReasons.push(
+        reason(
+          RouteBlockedReasonCode.PolicyDisabled,
+          'Policy rule is disabled.',
+        ),
+      );
     }
     if (missingApproval) {
       blockedReasons.push(
-        reason(RouteBlockedReasonCode.MissingApproval, `Missing approval from ${missingApproval.bodyName}.`, missingApproval.bodyId),
+        reason(
+          RouteBlockedReasonCode.MissingApproval,
+          `Missing approval from ${missingApproval.bodyName}.`,
+          missingApproval.bodyId,
+        ),
       );
     }
     if (vetoed) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.Vetoed, `Proposal was vetoed by ${vetoed.bodyName}.`, vetoed.bodyId));
+      blockedReasons.push(
+        reason(
+          RouteBlockedReasonCode.Vetoed,
+          `Proposal was vetoed by ${vetoed.bodyName}.`,
+          vetoed.bodyId,
+        ),
+      );
     }
     if (proposal.status === ProposalStatus.Approved && timelockSeconds > 0) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.NotQueued, 'Proposal must be queued before execution.'));
+      blockedReasons.push(
+        reason(
+          RouteBlockedReasonCode.NotQueued,
+          'Proposal must be queued before execution.',
+        ),
+      );
     }
-    if (proposal.status === ProposalStatus.Queued && executableAt !== undefined && nowSeconds < executableAt) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.TimelockNotSatisfied, 'Timelock has not elapsed.'));
+    if (
+      proposal.status === ProposalStatus.Queued &&
+      executableAt !== undefined &&
+      nowSeconds < executableAt
+    ) {
+      blockedReasons.push(
+        reason(
+          RouteBlockedReasonCode.TimelockNotSatisfied,
+          'Timelock has not elapsed.',
+        ),
+      );
     }
     if (proposal.status === ProposalStatus.Executed) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.AlreadyExecuted, 'Proposal is already executed.'));
+      blockedReasons.push(
+        reason(
+          RouteBlockedReasonCode.AlreadyExecuted,
+          'Proposal is already executed.',
+        ),
+      );
     }
     if (proposal.status === ProposalStatus.Cancelled) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.Cancelled, 'Proposal is cancelled.'));
+      blockedReasons.push(
+        reason(RouteBlockedReasonCode.Cancelled, 'Proposal is cancelled.'),
+      );
     }
     if (proposal.status === ProposalStatus.Expired) {
-      blockedReasons.push(reason(RouteBlockedReasonCode.Expired, 'Proposal is expired.'));
+      blockedReasons.push(
+        reason(RouteBlockedReasonCode.Expired, 'Proposal is expired.'),
+      );
     }
 
     return normalizeRow<ProposalRouteExplanationDto>({
@@ -304,35 +385,56 @@ export class ReadModelsService {
         seconds: String(timelockSeconds),
         queuedAtChain: proposal.queued_at_chain,
         executableAtChain: proposal.executable_at_chain,
-        satisfied: timelockSeconds === 0 || (executableAt !== undefined && nowSeconds >= executableAt),
+        satisfied:
+          timelockSeconds === 0 ||
+          (executableAt !== undefined && nowSeconds >= executableAt),
       },
       execution: {
         executable:
-          blockedReasons.length === 0 && (proposal.status === ProposalStatus.Approved || proposal.status === ProposalStatus.Queued),
-        executorBody: policy?.executor_body === null ? undefined : policy?.executor_body,
+          blockedReasons.length === 0 &&
+          (proposal.status === ProposalStatus.Approved ||
+            proposal.status === ProposalStatus.Queued),
+        executorBody:
+          policy?.executor_body === null ? undefined : policy?.executor_body,
         blockedReasons,
       },
     });
   }
 
   async getGraph(orgId: string): Promise<GovernanceGraphDto | undefined> {
-    const [organizations, bodies, roles, holders, proposals, edges] = await Promise.all([
-      this.db.query(`select chain_id::int as "chainId", org_id, name from organizations where org_id = $1`, [orgId]),
-      this.db.query(`select body_id, name, kind from bodies where org_id = $1`, [orgId]),
-      this.db.query(`select role_id, name, role_type from roles where org_id = $1`, [orgId]),
-      this.db.query(`select distinct holder_address from mandates where org_id = $1`, [orgId]),
-      this.db.query(`select proposal_id, title, status from proposals where org_id = $1`, [orgId]),
-      this.db.query(
-        `
+    const [organizations, bodies, roles, holders, proposals, edges] =
+      await Promise.all([
+        this.db.query(
+          `select chain_id::int as "chainId", org_id, name from organizations where org_id = $1`,
+          [orgId],
+        ),
+        this.db.query(
+          `select body_id, name, kind from bodies where org_id = $1`,
+          [orgId],
+        ),
+        this.db.query(
+          `select role_id, name, role_type from roles where org_id = $1`,
+          [orgId],
+        ),
+        this.db.query(
+          `select distinct holder_address from mandates where org_id = $1`,
+          [orgId],
+        ),
+        this.db.query(
+          `select proposal_id, title, status from proposals where org_id = $1`,
+          [orgId],
+        ),
+        this.db.query(
+          `
           select source_type as "sourceType", source_id as "sourceId", target_type as "targetType",
                  target_id as "targetId", edge_type as "type", label, metadata
           from governance_edges
           where org_id = $1
           order by id asc
         `,
-        [orgId],
-      ),
-    ]);
+          [orgId],
+        ),
+      ]);
     const org = organizations.rows[0];
     if (!org) {
       return undefined;
@@ -342,15 +444,28 @@ export class ReadModelsService {
       chainId: org.chainId,
       orgId,
       nodes: [
-        { id: `organization:${org.org_id}`, type: GraphNodeType.Organization, label: org.name },
-        ...bodies.rows.map((row) => ({ id: `body:${row.body_id}`, type: GraphNodeType.Body, label: row.name, metadata: { kind: row.kind } })),
+        {
+          id: `organization:${org.org_id}`,
+          type: GraphNodeType.Organization,
+          label: org.name,
+        },
+        ...bodies.rows.map((row) => ({
+          id: `body:${row.body_id}`,
+          type: GraphNodeType.Body,
+          label: row.name,
+          metadata: { kind: row.kind },
+        })),
         ...roles.rows.map((row) => ({
           id: `role:${row.role_id}`,
           type: GraphNodeType.Role,
           label: row.name,
           metadata: { roleType: row.role_type },
         })),
-        ...holders.rows.map((row) => ({ id: `holder:${row.holder_address}`, type: GraphNodeType.Holder, label: row.holder_address })),
+        ...holders.rows.map((row) => ({
+          id: `holder:${row.holder_address}`,
+          type: GraphNodeType.Holder,
+          label: row.holder_address,
+        })),
         ...proposals.rows.map((row) => ({
           id: `proposal:${row.proposal_id}`,
           type: GraphNodeType.Proposal,
@@ -370,20 +485,42 @@ export class ReadModelsService {
   }
 
   private async getBodyNameMap(orgId: string): Promise<Map<string, string>> {
-    const result = await this.db.query(`select body_id, name from bodies where org_id = $1`, [orgId]);
-    return new Map(result.rows.map((row) => [String(row.body_id), String(row.name)]));
+    const result = await this.db.query(
+      `select body_id, name from bodies where org_id = $1`,
+      [orgId],
+    );
+    return new Map(
+      result.rows.map((row) => [String(row.body_id), String(row.name)]),
+    );
   }
 
-  private async getDecisionMap(chainId: string, proposalId: string): Promise<Map<string, ProposalDecisionRow>> {
+  private async getDecisionMap(
+    chainId: string,
+    orgId: string,
+    proposalId: string,
+  ): Promise<Map<string, ProposalDecisionRow>> {
     const result = await this.db.query(
-      `select body_id, decision_type, actor_address, tx_hash, decided_at_chain from proposal_decisions where chain_id = $1 and proposal_id = $2`,
-      [chainId, proposalId],
+      `
+        select body_id, decision_type, actor_address, tx_hash, decided_at_chain
+        from proposal_decisions
+        where chain_id = $1 and org_id = $2 and proposal_id = $3
+      `,
+      [chainId, orgId, proposalId],
     );
-    return new Map(result.rows.map((row) => [`${row.body_id}:${row.decision_type}`, row as ProposalDecisionRow]));
+    return new Map(
+      result.rows.map((row) => [
+        `${row.body_id}:${row.decision_type}`,
+        row as ProposalDecisionRow,
+      ]),
+    );
   }
 }
 
-function reason(code: RouteBlockedReasonCode, message: string, relatedBodyId?: string): RouteBlockedReasonDto {
+function reason(
+  code: RouteBlockedReasonCode,
+  message: string,
+  relatedBodyId?: string,
+): RouteBlockedReasonDto {
   return relatedBodyId ? { code, message, relatedBodyId } : { code, message };
 }
 

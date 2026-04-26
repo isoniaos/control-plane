@@ -25,6 +25,7 @@ PG_PASSWORD=secret
 ```
 
 `DATABASE_URL` can be used instead of the individual `PG_*` variables.
+Copy `.env.example` for the full local configuration surface.
 
 ## Commands
 
@@ -48,6 +49,8 @@ CONFIRMATIONS=0
 BLOCK_RANGE_SIZE=1000
 POLL_INTERVAL_MS=5000
 API_PORT=3000
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+CORS_CREDENTIALS=false
 ```
 
 REST API is exposed under `/v1`.

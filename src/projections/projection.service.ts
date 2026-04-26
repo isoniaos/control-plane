@@ -38,25 +38,19 @@ export class ProjectionService {
   constructor(private readonly db: DatabaseService) {}
 
   async processBatch(limit = 100): Promise<number> {
-    const result = await this.db.query<RawEventRow>(
-      `
-        select *
-        from raw_events
-        where status = 'confirmed' and processed_at is null
-        order by block_number asc, log_index asc
-        limit $1
-      `,
-      [limit],
-    );
-
-    for (const event of result.rows) {
-      await this.processEvent(event);
+    let processed = 0;
+    for (let index = 0; index < limit; index += 1) {
+      const didProcess = await this.processNextEvent();
+      if (!didProcess) {
+        break;
+      }
+      processed += 1;
     }
 
-    if (result.rowCount) {
-      this.logger.log(`Projected ${result.rowCount} raw events`);
+    if (processed > 0) {
+      this.logger.log(`Projected ${processed} raw events`);
     }
-    return result.rowCount ?? 0;
+    return processed;
   }
 
   async processUntilIdle(batchSize = 100): Promise<number> {
@@ -75,32 +69,62 @@ export class ProjectionService {
     return this.processUntilIdle();
   }
 
-  private async processEvent(event: RawEventRow): Promise<void> {
-    await this.db.transaction(async (client) => {
-      try {
+  private async processNextEvent(): Promise<boolean> {
+    let selectedEvent: RawEventRow | undefined;
+    try {
+      return await this.db.transaction(async (client) => {
+        const result = await client.query<RawEventRow>(
+          `
+            select *
+            from raw_events
+            where status = 'confirmed' and processed_at is null
+            order by block_number asc, log_index asc
+            limit 1
+            for update skip locked
+          `,
+        );
+        selectedEvent = result.rows[0];
+        if (!selectedEvent) {
+          return false;
+        }
+
+        const event = selectedEvent;
         await this.applyEvent(client, event);
         await client.query(
           `update raw_events set processed_at = now(), failed_at = null, error = null, updated_at = now() where id = $1`,
           [event.id],
         );
-      } catch (error) {
-        await client.query(
-          `
-            update raw_events
-            set failed_at = now(),
-                error = $2,
-                processing_attempts = processing_attempts + 1,
-                updated_at = now()
-            where id = $1
-          `,
-          [event.id, error instanceof Error ? error.message : String(error)],
-        );
-        throw error;
+        return true;
+      });
+    } catch (error) {
+      if (selectedEvent) {
+        await this.markEventFailed(selectedEvent.id, error);
       }
-    });
+      throw error;
+    }
   }
 
-  private async applyEvent(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async markEventFailed(
+    eventId: string,
+    error: unknown,
+  ): Promise<void> {
+    await this.db.query(
+      `
+        update raw_events
+        set failed_at = now(),
+            error = $2,
+            processing_attempts = processing_attempts + 1,
+            updated_at = now()
+        where id = $1 and processed_at is null
+      `,
+      [eventId, error instanceof Error ? error.message : String(error)],
+    );
+  }
+
+  private async applyEvent(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     switch (event.event_name) {
       case GovernanceEventName.OrganizationCreated:
         return this.organizationCreated(client, event);
@@ -141,7 +165,10 @@ export class ProjectionService {
     }
   }
 
-  private async organizationCreated(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async organizationCreated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     const args = event.args;
     const orgId = stringArg(args, 'orgId');
     const slug = stringArg(args, 'slug');
@@ -178,28 +205,45 @@ export class ProjectionService {
     );
   }
 
-  private async organizationUpdated(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async organizationUpdated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `update organizations set metadata_uri = $3, updated_at = now() where chain_id = $1 and org_id = $2`,
-      [event.chain_id, stringArg(event.args, 'orgId'), arg(event.args, 'metadataUri', 'metadataURI')],
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        arg(event.args, 'metadataUri', 'metadataURI'),
+      ],
     );
   }
 
-  private async organizationStatusChanged(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async organizationStatusChanged(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `update organizations set status = $3, updated_at = now() where chain_id = $1 and org_id = $2`,
-      [event.chain_id, stringArg(event.args, 'orgId'), toOrganizationStatus(arg(event.args, 'status'))],
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        toOrganizationStatus(arg(event.args, 'status')),
+      ],
     );
   }
 
-  private async bodyCreated(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async bodyCreated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     const bodyId = stringArg(event.args, 'bodyId');
     const orgId = stringArg(event.args, 'orgId');
     await client.query(
       `
         insert into bodies (chain_id, body_id, org_id, kind, name, metadata_uri, active, created_block, data_status)
         values ($1, $2, $3, $4, $5, $6, true, $7, $8)
-        on conflict (chain_id, body_id) do update set
+        on conflict (chain_id, org_id, body_id) do update set
           org_id = excluded.org_id,
           kind = excluded.kind,
           name = excluded.name,
@@ -219,10 +263,23 @@ export class ProjectionService {
         event.status,
       ],
     );
-    await upsertEdge(client, event, orgId, GraphNodeType.Organization, orgId, GraphNodeType.Body, bodyId, GraphEdgeType.Contains, undefined);
+    await upsertEdge(
+      client,
+      event,
+      orgId,
+      GraphNodeType.Organization,
+      orgId,
+      GraphNodeType.Body,
+      bodyId,
+      GraphEdgeType.Contains,
+      undefined,
+    );
   }
 
-  private async bodyUpdated(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async bodyUpdated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `update bodies set active = $4, metadata_uri = $5, updated_at = now() where chain_id = $1 and org_id = $2 and body_id = $3`,
       [
@@ -235,7 +292,10 @@ export class ProjectionService {
     );
   }
 
-  private async roleCreated(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async roleCreated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     const roleId = stringArg(event.args, 'roleId');
     const orgId = stringArg(event.args, 'orgId');
     const bodyId = stringArg(event.args, 'bodyId');
@@ -244,7 +304,7 @@ export class ProjectionService {
       `
         insert into roles (chain_id, role_id, org_id, body_id, role_type, name, metadata_uri, active, data_status)
         values ($1, $2, $3, $4, $5, $6, $7, true, $8)
-        on conflict (chain_id, role_id) do update set
+        on conflict (chain_id, org_id, role_id) do update set
           org_id = excluded.org_id,
           body_id = excluded.body_id,
           role_type = excluded.role_type,
@@ -265,10 +325,23 @@ export class ProjectionService {
         event.status,
       ],
     );
-    await upsertEdge(client, event, orgId, GraphNodeType.Body, bodyId, GraphNodeType.Role, roleId, GraphEdgeType.Contains, roleType);
+    await upsertEdge(
+      client,
+      event,
+      orgId,
+      GraphNodeType.Body,
+      bodyId,
+      GraphNodeType.Role,
+      roleId,
+      GraphEdgeType.Contains,
+      roleType,
+    );
   }
 
-  private async roleUpdated(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async roleUpdated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `update roles set active = $4, metadata_uri = $5, updated_at = now() where chain_id = $1 and org_id = $2 and role_id = $3`,
       [
@@ -281,12 +354,19 @@ export class ProjectionService {
     );
   }
 
-  private async mandateAssigned(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async mandateAssigned(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     const mandateId = stringArg(event.args, 'mandateId');
     const orgId = stringArg(event.args, 'orgId');
     const roleId = stringArg(event.args, 'roleId');
     const bodyId = stringArg(event.args, 'bodyId');
-    const holder = stringArg(event.args, 'holderAddress', 'holder').toLowerCase();
+    const holder = stringArg(
+      event.args,
+      'holderAddress',
+      'holder',
+    ).toLowerCase();
     await client.query(
       `
         insert into mandates (
@@ -294,7 +374,7 @@ export class ProjectionService {
           end_time, proposal_type_mask, spending_limit, active, revoked, data_status
         )
         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, false, $11)
-        on conflict (chain_id, mandate_id) do update set
+        on conflict (chain_id, org_id, mandate_id) do update set
           body_id = excluded.body_id,
           role_id = excluded.role_id,
           holder_address = excluded.holder_address,
@@ -321,21 +401,43 @@ export class ProjectionService {
         event.status,
       ],
     );
-    await upsertEdge(client, event, orgId, GraphNodeType.Holder, holder, GraphNodeType.Role, roleId, GraphEdgeType.Holds, undefined);
-  }
-
-  private async mandateRevoked(client: PoolClient, event: RawEventRow): Promise<void> {
-    await client.query(
-      `update mandates set active = false, revoked = true, updated_at = now() where chain_id = $1 and org_id = $2 and mandate_id = $3`,
-      [event.chain_id, stringArg(event.args, 'orgId'), stringArg(event.args, 'mandateId')],
+    await upsertEdge(
+      client,
+      event,
+      orgId,
+      GraphNodeType.Holder,
+      holder,
+      GraphNodeType.Role,
+      roleId,
+      GraphEdgeType.Holds,
+      undefined,
     );
   }
 
-  private async policyRuleSet(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async mandateRevoked(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
+    await client.query(
+      `update mandates set active = false, revoked = true, updated_at = now() where chain_id = $1 and org_id = $2 and mandate_id = $3`,
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'mandateId'),
+      ],
+    );
+  }
+
+  private async policyRuleSet(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     const orgId = stringArg(event.args, 'orgId');
     const proposalType = toProposalType(arg(event.args, 'proposalType'));
     const version = stringArg(event.args, 'version');
-    const requiredApprovalBodies = asStringArray(arg(event.args, 'requiredApprovalBodies'));
+    const requiredApprovalBodies = asStringArray(
+      arg(event.args, 'requiredApprovalBodies'),
+    );
     const vetoBodies = asStringArray(arg(event.args, 'vetoBodies'));
     const executorBody = stringArg(event.args, 'executorBody');
     const params = [
@@ -401,7 +503,17 @@ export class ProjectionService {
       );
     }
     for (const bodyId of vetoBodies) {
-      await upsertEdge(client, event, orgId, GraphNodeType.ProposalType, proposalType, GraphNodeType.Body, bodyId, GraphEdgeType.CanVeto, undefined);
+      await upsertEdge(
+        client,
+        event,
+        orgId,
+        GraphNodeType.ProposalType,
+        proposalType,
+        GraphNodeType.Body,
+        bodyId,
+        GraphEdgeType.CanVeto,
+        undefined,
+      );
     }
     if (executorBody !== '0') {
       await upsertEdge(
@@ -418,7 +530,10 @@ export class ProjectionService {
     }
   }
 
-  private async proposalCreated(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async proposalCreated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     const proposalId = stringArg(event.args, 'proposalId');
     const orgId = stringArg(event.args, 'orgId');
     const proposalType = toProposalType(arg(event.args, 'proposalType'));
@@ -429,10 +544,19 @@ export class ProjectionService {
         from policy_rules
         where chain_id = $1 and org_id = $2 and proposal_type = $3 and version = $4
       `,
-      [event.chain_id, orgId, proposalType, stringArg(event.args, 'policyVersion')],
+      [
+        event.chain_id,
+        orgId,
+        proposalType,
+        stringArg(event.args, 'policyVersion'),
+      ],
     );
-    const requiredApprovalBodies = (policy.rows[0]?.required_approval_bodies ?? []) as unknown[];
-    const initialStatus = requiredApprovalBodies.length === 0 ? ProposalStatus.Approved : ProposalStatus.UnderReview;
+    const requiredApprovalBodies = (policy.rows[0]?.required_approval_bodies ??
+      []) as unknown[];
+    const initialStatus =
+      requiredApprovalBodies.length === 0
+        ? ProposalStatus.Approved
+        : ProposalStatus.UnderReview;
     await client.query(
       `
         insert into proposals (
@@ -441,7 +565,7 @@ export class ProjectionService {
           created_tx_hash, created_at_chain, metadata_uri, data_status
         )
         values ($1, $2, $3, $4, $5, $6, lower($7), $8, $9, lower($10), $11, $12, $13, $14, $15, $16)
-        on conflict (chain_id, proposal_id) do update set
+        on conflict (chain_id, org_id, proposal_id) do update set
           proposal_type = excluded.proposal_type,
           policy_version = excluded.policy_version,
           title = excluded.title,
@@ -486,7 +610,11 @@ export class ProjectionService {
     );
   }
 
-  private async proposalDecision(client: PoolClient, event: RawEventRow, decisionType: DecisionType): Promise<void> {
+  private async proposalDecision(
+    client: PoolClient,
+    event: RawEventRow,
+    decisionType: DecisionType,
+  ): Promise<void> {
     await client.query(
       `
         insert into proposal_decisions (
@@ -494,7 +622,7 @@ export class ProjectionService {
           tx_hash, block_number, log_index, decided_at_chain, data_status
         )
         values ($1, $2, $3, $4, lower($5), $6, $7, $8, $9, $10, $11)
-        on conflict (chain_id, proposal_id, body_id, decision_type) do update set
+        on conflict (chain_id, org_id, proposal_id, body_id, decision_type) do update set
           actor_address = excluded.actor_address,
           tx_hash = excluded.tx_hash,
           block_number = excluded.block_number,
@@ -518,7 +646,10 @@ export class ProjectionService {
     );
   }
 
-  private async proposalQueued(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async proposalQueued(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `
         update proposals
@@ -539,7 +670,10 @@ export class ProjectionService {
     );
   }
 
-  private async proposalExecuted(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async proposalExecuted(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `
         update proposals
@@ -548,18 +682,35 @@ export class ProjectionService {
             updated_at = now()
         where chain_id = $1 and org_id = $2 and proposal_id = $3
       `,
-      [event.chain_id, stringArg(event.args, 'orgId'), stringArg(event.args, 'proposalId'), ProposalStatus.Executed, event.block_timestamp ?? '0'],
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'proposalId'),
+        ProposalStatus.Executed,
+        event.block_timestamp ?? '0',
+      ],
     );
   }
 
-  private async proposalCancelled(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async proposalCancelled(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `update proposals set status = $4, updated_at = now() where chain_id = $1 and org_id = $2 and proposal_id = $3`,
-      [event.chain_id, stringArg(event.args, 'orgId'), stringArg(event.args, 'proposalId'), ProposalStatus.Cancelled],
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        stringArg(event.args, 'proposalId'),
+        ProposalStatus.Cancelled,
+      ],
     );
   }
 
-  private async proposalStatusChanged(client: PoolClient, event: RawEventRow): Promise<void> {
+  private async proposalStatusChanged(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
     await client.query(
       `update proposals set status = $4, updated_at = now() where chain_id = $1 and org_id = $2 and proposal_id = $3`,
       [
@@ -600,11 +751,25 @@ async function upsertEdge(
       on conflict (chain_id, org_id, source_type, source_id, target_type, target_id, edge_type)
       do update set label = excluded.label, data_status = excluded.data_status, updated_at = now()
     `,
-    [event.chain_id, orgId, sourceType, sourceId, targetType, targetId, edgeType, label, event.status],
+    [
+      event.chain_id,
+      orgId,
+      sourceType,
+      sourceId,
+      targetType,
+      targetId,
+      edgeType,
+      label,
+      event.status,
+    ],
   );
 }
 
-function arg(args: Record<string, unknown>, key: string, legacyKey?: string): unknown {
+function arg(
+  args: Record<string, unknown>,
+  key: string,
+  legacyKey?: string,
+): unknown {
   const value = args[key] ?? (legacyKey ? args[legacyKey] : undefined);
   if (value === undefined || value === null) {
     throw new Error(`Missing event argument: ${key}`);
@@ -612,6 +777,10 @@ function arg(args: Record<string, unknown>, key: string, legacyKey?: string): un
   return value;
 }
 
-function stringArg(args: Record<string, unknown>, key: string, legacyKey?: string): string {
+function stringArg(
+  args: Record<string, unknown>,
+  key: string,
+  legacyKey?: string,
+): string {
   return asString(arg(args, key, legacyKey));
 }

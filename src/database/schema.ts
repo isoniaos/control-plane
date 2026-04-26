@@ -61,7 +61,7 @@ create table if not exists bodies (
   data_status text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key(chain_id, body_id)
+  primary key(chain_id, org_id, body_id)
 );
 
 create table if not exists roles (
@@ -76,7 +76,7 @@ create table if not exists roles (
   data_status text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key(chain_id, role_id)
+  primary key(chain_id, org_id, role_id)
 );
 
 create table if not exists mandates (
@@ -95,7 +95,7 @@ create table if not exists mandates (
   data_status text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key(chain_id, mandate_id)
+  primary key(chain_id, org_id, mandate_id)
 );
 
 create table if not exists policy_rules (
@@ -151,7 +151,7 @@ create table if not exists proposals (
   data_status text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key(chain_id, proposal_id)
+  primary key(chain_id, org_id, proposal_id)
 );
 
 create table if not exists proposal_decisions (
@@ -168,7 +168,7 @@ create table if not exists proposal_decisions (
   decided_at_chain numeric not null,
   data_status text not null,
   created_at timestamptz not null default now(),
-  unique(chain_id, proposal_id, body_id, decision_type)
+  constraint proposal_decisions_identity_key unique(chain_id, org_id, proposal_id, body_id, decision_type)
 );
 
 create table if not exists governance_edges (
@@ -195,4 +195,21 @@ create index if not exists proposals_org_idx on proposals(chain_id, org_id, prop
 create index if not exists bodies_org_idx on bodies(chain_id, org_id);
 create index if not exists roles_org_idx on roles(chain_id, org_id);
 create index if not exists mandates_org_idx on mandates(chain_id, org_id);
+
+alter table bodies drop constraint if exists bodies_pkey;
+alter table bodies add primary key (chain_id, org_id, body_id);
+
+alter table roles drop constraint if exists roles_pkey;
+alter table roles add primary key (chain_id, org_id, role_id);
+
+alter table mandates drop constraint if exists mandates_pkey;
+alter table mandates add primary key (chain_id, org_id, mandate_id);
+
+alter table proposals drop constraint if exists proposals_pkey;
+alter table proposals add primary key (chain_id, org_id, proposal_id);
+
+alter table proposal_decisions drop constraint if exists proposal_decisions_chain_id_proposal_id_body_id_decision_type_key;
+alter table proposal_decisions drop constraint if exists proposal_decisions_chain_id_proposal_id_body_id_decision_type_k;
+alter table proposal_decisions drop constraint if exists proposal_decisions_identity_key;
+alter table proposal_decisions add constraint proposal_decisions_identity_key unique(chain_id, org_id, proposal_id, body_id, decision_type);
 `;
