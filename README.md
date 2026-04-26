@@ -1,12 +1,13 @@
 # control-plane
 
-Этот модуль является частью workspace **IsoniaOS**.
+This module is part of the **IsoniaOS** workspace.
 
-## Назначение
-См. `../docs/repository-boundaries.md` и `../docs/v0.1-tz.md`.
+## Purpose
 
-## Для v0.1
-- держать scope минимальным
-- не выходить за границы текущей архитектуры
-- синхронизировать изменения со спецификациями в `../docs/`
+See `../docs/repository-boundaries.md` and `../docs/v0.1-tz.md`.
 
+## For v0.1
+
+- keep the scope minimal
+- stay within the current architecture boundaries
+- keep changes aligned with the specifications in `../docs/`
