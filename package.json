@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "dev": "nest start --watch",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -17,14 +18,21 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "db:migrate": "ts-node -r tsconfig-paths/register src/scripts/migrate.ts",
+    "indexer:start": "ts-node -r tsconfig-paths/register src/scripts/indexer.ts",
+    "worker:projections": "ts-node -r tsconfig-paths/register src/scripts/projections.ts",
+    "projections:rebuild": "ts-node -r tsconfig-paths/register src/scripts/rebuild-projections.ts",
+    "replay": "npm run projections:rebuild"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "viem": "^2.23.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -32,6 +40,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@types/pg": "^8.11.10",
     "@swc/cli": "^0.6.0",
     "@swc/core": "^1.10.7",
     "@types/express": "^5.0.0",
