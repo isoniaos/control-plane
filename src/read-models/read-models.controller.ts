@@ -5,6 +5,7 @@ import type {
   MandateDto,
   OrganizationDto,
   OrganizationOverviewDto,
+  OrganizationPoliciesDto,
   ProposalDto,
   ProposalRouteExplanationDto,
   ProposalSummaryDto,
@@ -57,6 +58,11 @@ export class ReadModelsController {
   @Get('orgs/:orgId/holders/:address/mandates')
   getHolderMandates(@Param('orgId') orgId: string, @Param('address') address: string): Promise<MandateDto[]> {
     return this.readModels.getHolderMandates(orgId, address);
+  }
+
+  @Get('orgs/:orgId/policies')
+  getPolicies(@Param('orgId') orgId: string): Promise<OrganizationPoliciesDto> {
+    return this.readModels.getPolicies(orgId);
   }
 
   @Get('orgs/:orgId/proposals')

@@ -10,6 +10,8 @@ import {
   type OrganizationDto,
   type OrganizationOverviewCountsDto,
   type OrganizationOverviewDto,
+  type OrganizationPoliciesDto,
+  type OrganizationPolicyDto,
   type ProposalDto,
   type ProposalRouteExplanationDto,
   type ProposalSummaryDto,
@@ -41,6 +43,19 @@ interface PolicyRuleRow {
   readonly executor_body: string | null;
   readonly timelock_seconds: string;
   readonly enabled: boolean;
+}
+
+interface CurrentPolicyRuleRow {
+  readonly chainId: number;
+  readonly orgId: string;
+  readonly proposalType: ProposalType;
+  readonly version: string;
+  readonly required_approval_bodies: unknown;
+  readonly veto_bodies: unknown;
+  readonly executor_body: string | null;
+  readonly timelock_seconds: string;
+  readonly enabled: boolean;
+  readonly data_status: string;
 }
 
 interface ProposalDecisionRow {
@@ -180,6 +195,34 @@ export class ReadModelsService {
       [orgId, address],
     );
     return normalizeRows<MandateDto>(result.rows);
+  }
+
+  async getPolicies(orgId: string): Promise<OrganizationPoliciesDto> {
+    const result = await this.db.query(
+      `
+        select chain_id::int as "chainId", org_id as "orgId", proposal_type as "proposalType",
+               version, required_approval_bodies, veto_bodies, executor_body,
+               timelock_seconds, enabled, data_status
+        from current_policy_rules
+        where org_id = $1
+        order by proposal_type asc
+      `,
+      [orgId],
+    );
+    return (result.rows as CurrentPolicyRuleRow[]).map((row) =>
+      normalizeRow<OrganizationPolicyDto>({
+        chainId: row.chainId,
+        orgId: row.orgId,
+        proposalType: row.proposalType,
+        version: row.version,
+        requiredApprovalBodies: asStringArray(row.required_approval_bodies),
+        vetoBodies: asStringArray(row.veto_bodies),
+        executorBody: row.executor_body,
+        timelockSeconds: row.timelock_seconds,
+        enabled: row.enabled,
+        dataStatus: row.data_status,
+      }),
+    );
   }
 
   async getProposals(

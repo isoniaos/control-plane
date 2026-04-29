@@ -1,6 +1,6 @@
 {
   "name": "@isonia/control-plane",
-  "version": "v0.5.0-alpha.1",
+  "version": "v0.5.0-alpha.2",
   "description": "Control plane for Isonia OS",
   "author": "IsoniaOS Team <info@isonia.org>",
   "private": true,
@@ -28,7 +28,7 @@
     "replay": "npm run projections:rebuild"
   },
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.5.0-alpha.1",
+    "@isonia/types": "github:isoniaos/types#v0.5.0-alpha.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",

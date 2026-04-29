@@ -1,4 +1,5 @@
 import {
+  DataStatus,
   DecisionType,
   ProposalStatus,
   ProposalType,
@@ -17,6 +18,78 @@ interface RouteFixture {
 describe('ReadModelsService', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('returns an empty policy list when an org has no current policies', async () => {
+    const { service } = createPolicyListService([]);
+
+    await expect(service.getPolicies('1')).resolves.toEqual([]);
+  });
+
+  it('returns multiple current policy rules for an org', async () => {
+    const { service } = createPolicyListService([
+      currentPolicy({
+        proposalType: ProposalType.Standard,
+        version: '2',
+        required_approval_bodies: [1, '2'],
+        veto_bodies: ['9'],
+        executor_body: '3',
+        timelock_seconds: '60',
+        enabled: true,
+      }),
+      currentPolicy({
+        proposalType: ProposalType.Treasury,
+        version: '5',
+        required_approval_bodies: ['4'],
+        veto_bodies: [],
+        executor_body: null,
+        timelock_seconds: '3600',
+        enabled: false,
+      }),
+    ]);
+
+    await expect(service.getPolicies('1')).resolves.toEqual([
+      {
+        chainId: 31337,
+        orgId: '1',
+        proposalType: ProposalType.Standard,
+        version: '2',
+        requiredApprovalBodies: ['1', '2'],
+        vetoBodies: ['9'],
+        executorBody: '3',
+        timelockSeconds: '60',
+        enabled: true,
+        dataStatus: DataStatus.Confirmed,
+      },
+      {
+        chainId: 31337,
+        orgId: '1',
+        proposalType: ProposalType.Treasury,
+        version: '5',
+        requiredApprovalBodies: ['4'],
+        vetoBodies: [],
+        timelockSeconds: '3600',
+        enabled: false,
+        dataStatus: DataStatus.Confirmed,
+      },
+    ]);
+  });
+
+  it('isolates policy lists by org_id', async () => {
+    const { service, query } = createPolicyListService([
+      currentPolicy({ orgId: '1', proposalType: ProposalType.Standard }),
+      currentPolicy({ orgId: '2', proposalType: ProposalType.Treasury }),
+    ]);
+
+    const policies = await service.getPolicies('1');
+
+    expect(policies).toHaveLength(1);
+    expect(policies[0]?.orgId).toBe('1');
+    expect(policies[0]?.proposalType).toBe(ProposalType.Standard);
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['1']);
+    expect(normalizeSql(query.mock.calls[0]?.[0])).toContain(
+      'from current_policy_rules where org_id = $1',
+    );
   });
 
   it('reports a missing policy snapshot in proposal route explanations', async () => {
@@ -175,6 +248,37 @@ function createRouteService(fixture: RouteFixture): {
   });
   const db = { query } as unknown as DatabaseService;
   return { service: new ReadModelsService(db), query };
+}
+
+function createPolicyListService(
+  rows: readonly Record<string, unknown>[],
+): {
+  service: ReadModelsService;
+  query: jest.Mock;
+} {
+  const query = jest.fn(async (_sql: string, params?: readonly unknown[]) => ({
+    rows: rows.filter((row) => row.orgId === params?.[0]),
+  }));
+  const db = { query } as unknown as DatabaseService;
+  return { service: new ReadModelsService(db), query };
+}
+
+function currentPolicy(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    chainId: 31337,
+    orgId: '1',
+    proposalType: ProposalType.Standard,
+    version: '1',
+    required_approval_bodies: ['1'],
+    veto_bodies: [],
+    executor_body: '2',
+    timelock_seconds: '0',
+    enabled: true,
+    data_status: DataStatus.Confirmed,
+    ...overrides,
+  };
 }
 
 function proposal(
