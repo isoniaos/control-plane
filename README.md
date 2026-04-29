@@ -54,3 +54,14 @@ CORS_CREDENTIALS=false
 ```
 
 REST API is exposed under `/v1`.
+
+Diagnostics for operator support are available at:
+
+```txt
+GET /v1/diagnostics
+```
+
+The diagnostics response includes API version, configured chain and contract
+addresses, latest observed and safe blocks when RPC is available, indexer
+cursors, raw event counts, projection backlog/failures, the latest projection
+error summary, and stale data indicators.
