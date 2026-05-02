@@ -1,16 +1,18 @@
-# control-plane
+# IsoniaOS Control Plane
 
-This module is part of the **IsoniaOS** workspace.
+Indexing, projection, diagnostics, and REST read API for the IsoniaOS v0.5 Developer Preview.
 
-## Purpose
+## Status
 
-See `../docs/repository-boundaries.md` and `../docs/v0.1-tz.md`.
+v0.5 Developer Preview / REST-only / not a source of governance authority.
 
-## For v0.1
+## Scope
 
-- keep the scope minimal
-- stay within the current architecture boundaries
-- keep changes aligned with the specifications in `../docs/`
+- poll local EVM logs with `getLogs`;
+- store raw events durably before projection;
+- build replayable read models;
+- expose `/v1` REST endpoints using shared `@isonia/types` DTOs;
+- explain proposal routes from indexed policy snapshots.
 
 ## Local Postgres
 
@@ -54,6 +56,8 @@ API_PORT=3000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 CORS_CREDENTIALS=false
 ```
+
+Leave contract address variables blank until local contracts are deployed. The zero address is rejected so placeholder config cannot be mistaken for an indexed protocol deployment.
 
 REST API is exposed under `/v1`.
 

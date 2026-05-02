@@ -1,0 +1,49 @@
+# Changelog
+
+All notable changes to `@isonia/control-plane` are documented here.
+
+`package.json.version` uses SemVer without a leading `v`. Git tags use the matching version with a leading `v`.
+
+## [Unreleased]
+
+## [0.5.0-alpha.3]
+
+### Added
+
+- Added this changelog for release tracking.
+
+### Changed
+
+- The `/v1/version` endpoint reports the package version from `package.json`.
+- Application, script, indexer, projection, and test commands preload `.env` through `dotenv/config`.
+- Local setup documentation now targets the v0.5 Developer Preview flow.
+
+### Fixed
+
+- Contract address configuration rejects the zero address so copied placeholder values cannot be indexed as real deployments.
+- Generated TypeScript build-info files are ignored.
+
+## [0.5.0-alpha.2]
+
+### Added
+
+- Added `GET /v1/orgs/:orgId/policies` as a read-only REST endpoint returning shared `OrganizationPoliciesDto` data.
+- Added tests for empty policy lists, multiple policies, and org isolation.
+
+## [0.5.0-alpha.1]
+
+### Changed
+
+- Aligned package metadata with the v0.5 alpha workspace.
+
+## [0.1.0-alpha]
+
+### Added
+
+- Initial NestJS/PostgreSQL/viem Control Plane with indexing, projections, REST read models, diagnostics, and local scripts.
+
+[Unreleased]: https://github.com/isoniaos/control-plane/compare/v0.5.0-alpha.3...HEAD
+[0.5.0-alpha.3]: https://github.com/isoniaos/control-plane/releases/tag/v0.5.0-alpha.3
+[0.5.0-alpha.2]: https://github.com/isoniaos/control-plane/releases/tag/v0.5.0-alpha.2
+[0.5.0-alpha.1]: https://github.com/isoniaos/control-plane/releases/tag/v0.5.0-alpha.1
+[0.1.0-alpha]: https://github.com/isoniaos/control-plane/releases/tag/v0.1.0-alpha

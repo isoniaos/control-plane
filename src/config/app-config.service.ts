@@ -5,6 +5,9 @@ export interface ContractConfig {
   readonly govProposalsAddress?: `0x${string}`;
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+
 @Injectable()
 export class AppConfigService {
   readonly nodeEnv = this.readString('NODE_ENV', 'development');
@@ -102,8 +105,13 @@ export class AppConfigService {
     if (!value) {
       return undefined;
     }
-    if (!value.startsWith('0x')) {
+    if (!EVM_ADDRESS_PATTERN.test(value)) {
       throw new Error(`Invalid address environment variable: ${name}`);
+    }
+    if (value.toLowerCase() === ZERO_ADDRESS) {
+      throw new Error(
+        `Zero address is not valid for environment variable: ${name}`,
+      );
     }
     return value as `0x${string}`;
   }
