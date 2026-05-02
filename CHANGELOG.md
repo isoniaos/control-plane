@@ -6,6 +6,19 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added `pnpm dev` as the complete local runtime for API, indexer, and projection worker.
+- Added runtime startup logs for the API, indexer, and projection worker.
+- Added `GET /v1/diagnostics/indexer` with API/indexer/projection heartbeat status and masked runtime diagnostics.
+- Added runtime heartbeat storage for local process diagnostics.
+
+### Changed
+
+- Renamed development scripts to `api:dev`, `projections:start`, and `dev` while preserving manual indexer and projection commands.
+- Made `projections:start` run continuously for local development.
+- Disabled incremental emit for production builds so `nest build` recreates `dist` after cleaning it.
+
 ## [0.5.0-alpha.3]
 
 ### Added

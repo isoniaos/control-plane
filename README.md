@@ -35,10 +35,24 @@ Application and worker scripts preload `dotenv/config` before bootstrapping Nest
 
 ```txt
 corepack pnpm db:migrate
+corepack pnpm dev
+```
+
+`pnpm dev` starts the complete local Control Plane runtime for the v0.5
+Developer Preview:
+
+- REST API;
+- continuous indexer;
+- continuous projection worker.
+
+Manual commands remain available for debugging, CI, and recovery:
+
+```txt
+corepack pnpm api:dev
+corepack pnpm indexer:once
 corepack pnpm indexer:start
-corepack pnpm worker:projections
+corepack pnpm projections:start
 corepack pnpm projections:rebuild
-corepack pnpm start:dev
 ```
 
 Indexer configuration:
@@ -65,9 +79,14 @@ Diagnostics for operator support are available at:
 
 ```txt
 GET /v1/diagnostics
+GET /v1/diagnostics/indexer
 ```
 
 The diagnostics response includes API version, configured chain and contract
 addresses, latest observed and safe blocks when RPC is available, indexer
 cursors, raw event counts, projection backlog/failures, the latest projection
 error summary, and stale data indicators.
+
+`/v1/diagnostics/indexer` adds local runtime process heartbeats for the API,
+indexer, and projection worker so App Core and developers can tell whether
+workers are running, stale, or unknown.

@@ -33,6 +33,14 @@ create table if not exists chain_cursors (
   primary key(chain_id, contract_address)
 );
 
+create table if not exists runtime_heartbeats (
+  chain_id bigint not null,
+  process_name text not null,
+  last_seen_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb,
+  primary key(chain_id, process_name)
+);
+
 create table if not exists organizations (
   chain_id bigint not null,
   org_id bigint not null,

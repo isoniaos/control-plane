@@ -63,6 +63,7 @@ export class DatabaseService implements OnModuleDestroy {
       truncate table
         raw_events,
         chain_cursors,
+        runtime_heartbeats,
         organizations,
         bodies,
         roles,

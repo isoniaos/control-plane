@@ -60,9 +60,21 @@ export class IndexerService {
     return { fromBlock, toBlock, inserted };
   }
 
+  async getNextFromBlock(): Promise<bigint> {
+    const addresses = this.config.contractAddresses;
+    if (addresses.length === 0) {
+      return this.config.startBlock;
+    }
+    return this.nextFromBlock(addresses);
+  }
+
   async runForever(): Promise<void> {
     for (;;) {
-      await this.runOnce();
+      try {
+        await this.runOnce();
+      } catch (error) {
+        this.logger.error(`Indexer loop failed: ${formatError(error)}`);
+      }
       await sleep(this.config.pollIntervalMs);
     }
   }
@@ -167,4 +179,8 @@ function minBigInt(left: bigint, right: bigint): bigint {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type {
   Address,
+  ChainId,
   DiagnosticsContractCursorDto,
   DiagnosticsContractDto,
   DiagnosticsContractName,
@@ -8,12 +9,18 @@ import type {
   DiagnosticsProjectionErrorDto,
   DiagnosticsRawEventCountsDto,
   DiagnosticsStaleDataIndicatorDto,
+  NumericString,
+  TransactionHash,
 } from '@isonia/types';
 import { createPublicClient, http } from 'viem';
 import { AppConfigService } from '../config/app-config.service';
+import { maskUrl } from '../config/safe-url';
 import { DatabaseService } from '../database/database.service';
-
-const CONTROL_PLANE_API_VERSION = 'v1';
+import { CONTROL_PLANE_API_VERSION } from '../system/version';
+import {
+  RuntimeHeartbeatService,
+  type RuntimeProcessHeartbeatDto,
+} from './runtime-heartbeat.service';
 
 interface ChainCursorRow {
   readonly contract_address: string;
@@ -45,6 +52,50 @@ interface ProjectionErrorRow {
   readonly processing_attempts: number | string;
 }
 
+interface LastProjectedCursorRow {
+  readonly block_number: string;
+  readonly tx_hash: string;
+  readonly log_index: number;
+  readonly processed_at: Date | string;
+}
+
+export interface ProjectionCursorDto {
+  readonly blockNumber: NumericString;
+  readonly txHash: TransactionHash;
+  readonly logIndex: number;
+  readonly processedAt: string;
+}
+
+export interface IndexerDiagnosticsDto {
+  readonly apiVersion: string;
+  readonly chainId: ChainId;
+  readonly generatedAt: string;
+  readonly runtime: {
+    readonly staleAfterMs: number;
+    readonly processes: RuntimeProcessHeartbeatDto[];
+  };
+  readonly indexer: {
+    readonly rpcUrl: string;
+    readonly contracts: DiagnosticsContractDto[];
+    readonly fromBlock: NumericString;
+    readonly pollingIntervalMs: number;
+    readonly safeBlockLag: number;
+    readonly latestChainBlock?: NumericString;
+    readonly latestSafeBlock?: NumericString;
+    readonly lastScannedBlocks: DiagnosticsContractCursorDto[];
+    readonly rawEventCounts: DiagnosticsRawEventCountsDto;
+    readonly staleDataIndicators: DiagnosticsStaleDataIndicatorDto[];
+  };
+  readonly projections: {
+    readonly store: string;
+    readonly pollingIntervalMs: number;
+    readonly lastProjectedCursor: ProjectionCursorDto | null;
+    readonly projectionBacklog: number;
+    readonly failedProjectionCount: number;
+    readonly latestProjectionError?: DiagnosticsProjectionErrorDto;
+  };
+}
+
 @Injectable()
 export class DiagnosticsService {
   private readonly client;
@@ -52,6 +103,7 @@ export class DiagnosticsService {
   constructor(
     private readonly config: AppConfigService,
     private readonly db: DatabaseService,
+    private readonly runtimeHeartbeats: RuntimeHeartbeatService,
   ) {
     this.client = createPublicClient({
       transport: http(config.rpcUrl),
@@ -106,6 +158,56 @@ export class DiagnosticsService {
       ...(latestError ? { latestProjectionError: latestError } : {}),
       staleDataIndicators: indicators,
       generatedAt: new Date().toISOString(),
+    };
+  }
+
+  async getIndexerDiagnostics(): Promise<IndexerDiagnosticsDto> {
+    const [diagnostics, processes, fromBlock, lastProjectedCursor] =
+      await Promise.all([
+        this.getDiagnostics(),
+        this.runtimeHeartbeats.getProcesses(['api', 'indexer', 'projections']),
+        this.getNextFromBlock(),
+        this.getLastProjectedCursor(),
+      ]);
+
+    return {
+      apiVersion: CONTROL_PLANE_API_VERSION,
+      chainId: this.config.chainId,
+      generatedAt: new Date().toISOString(),
+      runtime: {
+        staleAfterMs: this.runtimeHeartbeats.staleAfterMs,
+        processes,
+      },
+      indexer: {
+        rpcUrl: maskUrl(this.config.rpcUrl),
+        contracts: diagnostics.contracts,
+        fromBlock: fromBlock.toString(),
+        pollingIntervalMs: this.config.pollIntervalMs,
+        safeBlockLag: this.config.confirmations,
+        ...(diagnostics.latestChainBlock
+          ? { latestChainBlock: diagnostics.latestChainBlock }
+          : {}),
+        ...(diagnostics.latestSafeBlock
+          ? { latestSafeBlock: diagnostics.latestSafeBlock }
+          : {}),
+        lastScannedBlocks: diagnostics.lastScannedBlocks,
+        rawEventCounts: diagnostics.rawEventCounts,
+        staleDataIndicators: diagnostics.staleDataIndicators.filter(
+          (indicator) =>
+            indicator.code !== 'projection_backlog' &&
+            indicator.code !== 'projection_failures',
+        ),
+      },
+      projections: {
+        store: maskUrl(this.config.databaseUrl),
+        pollingIntervalMs: this.config.pollIntervalMs,
+        lastProjectedCursor,
+        projectionBacklog: diagnostics.projectionBacklog,
+        failedProjectionCount: diagnostics.failedProjectionCount,
+        ...(diagnostics.latestProjectionError
+          ? { latestProjectionError: diagnostics.latestProjectionError }
+          : {}),
+      },
     };
   }
 
@@ -250,6 +352,49 @@ export class DiagnosticsService {
       error: row.error,
       ...(row.failed_at ? { failedAt: formatTimestamp(row.failed_at) } : {}),
       processingAttempts: Number(row.processing_attempts),
+    };
+  }
+
+  private async getNextFromBlock(): Promise<bigint> {
+    const addresses = this.config.contractAddresses;
+    if (addresses.length === 0) {
+      return this.config.startBlock;
+    }
+    const result = await this.db.query<{ last_scanned_block: string | null }>(
+      `
+        select min(last_scanned_block) as last_scanned_block
+        from chain_cursors
+        where chain_id = $1 and contract_address = any($2)
+      `,
+      [this.config.chainId, addresses.map((address) => address.toLowerCase())],
+    );
+    const value = result.rows[0]?.last_scanned_block;
+    if (value === null || value === undefined) {
+      return this.config.startBlock;
+    }
+    return BigInt(value) + 1n;
+  }
+
+  private async getLastProjectedCursor(): Promise<ProjectionCursorDto | null> {
+    const result = await this.db.query<LastProjectedCursorRow>(
+      `
+        select block_number, tx_hash, log_index, processed_at
+        from raw_events
+        where chain_id = $1 and processed_at is not null
+        order by block_number desc, log_index desc
+        limit 1
+      `,
+      [this.config.chainId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      blockNumber: row.block_number,
+      txHash: row.tx_hash as TransactionHash,
+      logIndex: row.log_index,
+      processedAt: formatTimestamp(row.processed_at),
     };
   }
 

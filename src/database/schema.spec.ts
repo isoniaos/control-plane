@@ -21,4 +21,9 @@ describe('CONTROL_PLANE_SCHEMA_SQL', () => {
       'drop constraint if exists proposal_decisions_chain_id_proposal_id_body_id_decision_type_k',
     );
   });
+
+  it('stores runtime heartbeats by chain and process', () => {
+    expect(sql).toContain('create table if not exists runtime_heartbeats');
+    expect(sql).toContain('primary key(chain_id, process_name)');
+  });
 });

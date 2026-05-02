@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { asString, asStringArray } from '../chain/json';
+import { AppConfigService } from '../config/app-config.service';
 import {
   toBodyKind,
   toOrganizationStatus,
@@ -31,11 +32,28 @@ interface RawEventRow {
   readonly block_timestamp: string | null;
 }
 
+export interface LastProjectedCursor {
+  readonly blockNumber: string;
+  readonly txHash: `0x${string}`;
+  readonly logIndex: number;
+  readonly processedAt: string;
+}
+
+interface LastProjectedCursorRow {
+  readonly block_number: string;
+  readonly tx_hash: string;
+  readonly log_index: number;
+  readonly processed_at: Date | string;
+}
+
 @Injectable()
 export class ProjectionService {
   private readonly logger = new Logger(ProjectionService.name);
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly config: AppConfigService,
+  ) {}
 
   async processBatch(limit = 100): Promise<number> {
     let processed = 0;
@@ -67,6 +85,32 @@ export class ProjectionService {
   async rebuild(): Promise<number> {
     await this.db.resetReadModels();
     return this.processUntilIdle();
+  }
+
+  async getLastProjectedCursor(): Promise<LastProjectedCursor | null> {
+    const result = await this.db.query<LastProjectedCursorRow>(
+      `
+        select block_number, tx_hash, log_index, processed_at
+        from raw_events
+        where chain_id = $1 and processed_at is not null and status = 'confirmed'
+        order by block_number desc, log_index desc
+        limit 1
+      `,
+      [this.config.chainId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      blockNumber: row.block_number,
+      txHash: row.tx_hash as `0x${string}`,
+      logIndex: row.log_index,
+      processedAt:
+        row.processed_at instanceof Date
+          ? row.processed_at.toISOString()
+          : row.processed_at,
+    };
   }
 
   private async processNextEvent(): Promise<boolean> {

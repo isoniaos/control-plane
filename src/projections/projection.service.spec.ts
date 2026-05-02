@@ -5,6 +5,7 @@ import {
   ProposalType,
 } from '@isonia/types';
 import { PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
 import { ProjectionService } from './projection.service';
 
@@ -125,7 +126,9 @@ function createProjectionHarness(events: TestRawEvent[]): ProjectionHarness {
     query: jest.fn(async () => queryResult([])),
   } as unknown as DatabaseService;
 
-  return { service: new ProjectionService(db), clientQuery };
+  const config = { chainId: 31337 } as AppConfigService;
+
+  return { service: new ProjectionService(db, config), clientQuery };
 }
 
 function proposalCreatedEvent(id: string): TestRawEvent {
