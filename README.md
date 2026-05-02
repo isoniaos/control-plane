@@ -25,7 +25,9 @@ PG_PASSWORD=secret
 ```
 
 `DATABASE_URL` can be used instead of the individual `PG_*` variables.
-Copy `.env.example` for the full local configuration surface.
+Copy `.env.example` to `.env` for the full local configuration surface. The `.env` file is ignored by git.
+
+Application and worker scripts preload `dotenv/config` before bootstrapping Nest services, so local commands, one-shot indexer runs, projection workers, and Jest tests read the same `.env` values as `src/main.ts`.
 
 ## Commands
 
