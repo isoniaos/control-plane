@@ -1,10 +1,14 @@
 # IsoniaOS Control Plane
 
-Indexing, projection, diagnostics, and REST read API for the IsoniaOS v0.5 Developer Preview.
+Indexing, projection, diagnostics, and REST read API for IsoniaOS governance read models.
 
 ## Status
 
-v0.5 Developer Preview / REST-only / not a source of governance authority.
+Active development target: v0.6 alpha preparation.
+
+Current package version remains `0.5.0-alpha.3`, the closed v0.5
+compatibility tag. The Control Plane remains REST-only and is not a source of
+governance authority.
 
 ## Scope
 
@@ -38,8 +42,8 @@ corepack pnpm db:migrate
 corepack pnpm dev
 ```
 
-`pnpm dev` starts the complete local Control Plane runtime for the v0.5
-Developer Preview:
+`pnpm dev` starts the complete local Control Plane runtime for the current v0.6
+baseline inherited from the closed v0.5 compatibility set:
 
 - REST API;
 - continuous indexer;
@@ -63,7 +67,8 @@ projection workers skip failed rows until this manual retry path or a full
 
 ## Shared Package Dependency
 
-This package consumes shared DTOs and enums through the pinned v0.5 tag:
+This package consumes shared DTOs and enums through the pinned known-good v0.5
+compatibility tag:
 
 ```json
 {

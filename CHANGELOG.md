@@ -8,6 +8,7 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ### Added
 
+- Added v0.6 repository preparation context under `Unreleased`.
 - Added `pnpm dev` as the complete local runtime for API, indexer, and projection worker.
 - Added runtime startup logs for the API, indexer, and projection worker.
 - Added `GET /v1/diagnostics/indexer` with API/indexer/projection heartbeat status and masked runtime diagnostics.
