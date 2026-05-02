@@ -87,6 +87,23 @@ export class ProjectionService {
     return this.processUntilIdle();
   }
 
+  async retryFailedEvents(): Promise<number> {
+    const result = await this.db.query(
+      `
+        update raw_events
+        set failed_at = null,
+            error = null,
+            updated_at = now()
+        where chain_id = $1
+          and status = 'confirmed'
+          and processed_at is null
+          and failed_at is not null
+      `,
+      [this.config.chainId],
+    );
+    return result.rowCount ?? 0;
+  }
+
   async getLastProjectedCursor(): Promise<LastProjectedCursor | null> {
     const result = await this.db.query<LastProjectedCursorRow>(
       `
@@ -121,11 +138,15 @@ export class ProjectionService {
           `
             select *
             from raw_events
-            where status = 'confirmed' and processed_at is null
+            where chain_id = $1
+              and status = 'confirmed'
+              and processed_at is null
+              and failed_at is null
             order by block_number asc, log_index asc
             limit 1
             for update skip locked
           `,
+          [this.config.chainId],
         );
         selectedEvent = result.rows[0];
         if (!selectedEvent) {

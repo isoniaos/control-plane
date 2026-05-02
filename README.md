@@ -52,7 +52,25 @@ corepack pnpm api:dev
 corepack pnpm indexer:once
 corepack pnpm indexer:start
 corepack pnpm projections:start
+corepack pnpm projections:retry-failed
 corepack pnpm projections:rebuild
+```
+
+`projections:retry-failed` clears failed projection markers for the configured
+`CHAIN_ID` and immediately attempts to process the requeued rows. Normal
+projection workers skip failed rows until this manual retry path or a full
+`projections:rebuild` is run.
+
+## Shared Package Dependency
+
+This package consumes shared DTOs and enums through the pinned v0.5 tag:
+
+```json
+{
+  "dependencies": {
+    "@isonia/types": "github:isoniaos/types#v0.5.0-alpha.5"
+  }
+}
 ```
 
 Indexer configuration:

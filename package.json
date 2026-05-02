@@ -25,11 +25,12 @@
     "indexer:once": "ts-node -r dotenv/config -r tsconfig-paths/register src/scripts/indexer-once.ts",
     "indexer:start": "ts-node -r dotenv/config -r tsconfig-paths/register src/scripts/indexer.ts",
     "projections:start": "ts-node -r dotenv/config -r tsconfig-paths/register src/scripts/projections.ts",
+    "projections:retry-failed": "ts-node -r dotenv/config -r tsconfig-paths/register src/scripts/retry-failed-projections.ts",
     "projections:rebuild": "ts-node -r dotenv/config -r tsconfig-paths/register src/scripts/rebuild-projections.ts",
     "replay": "pnpm projections:rebuild"
   },
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.5.0-alpha.4",
+    "@isonia/types": "github:isoniaos/types#v0.5.0-alpha.5",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",

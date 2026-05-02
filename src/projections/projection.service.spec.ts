@@ -24,10 +24,11 @@ interface TestRawEvent extends QueryResultRow {
 interface ProjectionHarness {
   readonly service: ProjectionService;
   readonly clientQuery: jest.Mock;
+  readonly dbQuery: jest.Mock;
 }
 
 describe('ProjectionService', () => {
-  it('claims projection rows with FOR UPDATE SKIP LOCKED', async () => {
+  it('claims only configured-chain projection rows with FOR UPDATE SKIP LOCKED', async () => {
     const { service, clientQuery } = createProjectionHarness([]);
 
     await expect(service.processBatch(1)).resolves.toBe(0);
@@ -36,10 +37,27 @@ describe('ProjectionService', () => {
       .replace(/\s+/g, ' ')
       .toLowerCase();
     expect(selectSql).toContain('from raw_events');
+    expect(selectSql).toContain('where chain_id = $1');
     expect(selectSql).toContain(
-      "where status = 'confirmed' and processed_at is null",
+      "status = 'confirmed' and processed_at is null",
     );
+    expect(selectSql).toContain('failed_at is null');
     expect(selectSql).toContain('for update skip locked');
+    expect(clientQuery.mock.calls[0][1]).toEqual([31337]);
+  });
+
+  it('requeues failed configured-chain events for manual retry', async () => {
+    const { service, dbQuery } = createProjectionHarness([]);
+
+    await expect(service.retryFailedEvents()).resolves.toBe(0);
+
+    const retrySql = normalizeSql(dbQuery.mock.calls[0][0]);
+    expect(retrySql).toContain('update raw_events');
+    expect(retrySql).toContain('where chain_id = $1');
+    expect(retrySql).toContain("status = 'confirmed'");
+    expect(retrySql).toContain('processed_at is null');
+    expect(retrySql).toContain('failed_at is not null');
+    expect(dbQuery.mock.calls[0][1]).toEqual([31337]);
   });
 
   it('projects ProposalCreated policyVersion into proposals', async () => {
@@ -118,17 +136,18 @@ function createProjectionHarness(events: TestRawEvent[]): ProjectionHarness {
     return queryResult([], values);
   });
   const client = { query: clientQuery } as unknown as PoolClient;
+  const dbQuery = jest.fn(async () => queryResult([]));
   const db = {
     transaction: jest.fn(
       async (work: (transactionClient: PoolClient) => Promise<unknown>) =>
         work(client),
     ),
-    query: jest.fn(async () => queryResult([])),
+    query: dbQuery,
   } as unknown as DatabaseService;
 
   const config = { chainId: 31337 } as AppConfigService;
 
-  return { service: new ProjectionService(db, config), clientQuery };
+  return { service: new ProjectionService(db, config), clientQuery, dbQuery };
 }
 
 function proposalCreatedEvent(id: string): TestRawEvent {

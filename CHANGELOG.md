@@ -18,6 +18,13 @@ All notable changes to `@isonia/control-plane` are documented here.
 - Renamed development scripts to `api:dev`, `projections:start`, and `dev` while preserving manual indexer and projection commands.
 - Made `projections:start` run continuously for local development.
 - Disabled incremental emit for production builds so `nest build` recreates `dist` after cleaning it.
+- Updated the pinned `@isonia/types` dependency ref to `v0.5.0-alpha.5`.
+
+### Fixed
+
+- Projection workers now claim only rows for the configured `CHAIN_ID`.
+- Normal projection workers now skip failed raw events until manual retry or rebuild.
+- Added `projections:retry-failed` for explicit failed-event requeue and processing.
 
 ## [0.5.0-alpha.3]
 
