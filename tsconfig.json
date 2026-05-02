@@ -10,14 +10,6 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "paths": {
-      "@isonia/types": [
-        "../types/dist/index.d.ts"
-      ],
-      "@isonia/types/*": [
-        "../types/dist/*"
-      ]
-    },
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,

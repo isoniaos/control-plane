@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@isonia/types':
-        specifier: github:isoniaos/types#v0.5.0-alpha.2
-        version: https://codeload.github.com/isoniaos/types/tar.gz/51179a58d35e04ed2a2acb7a7fe42f20e5d44807
+        specifier: github:isoniaos/types#v0.5.0-alpha.3
+        version: https://codeload.github.com/isoniaos/types/tar.gz/22e6625a421a63f6169df24f85f61af090c27c31
       '@nestjs/common':
         specifier: ^11.0.1
         version: 11.1.19(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -20,6 +20,9 @@ importers:
       '@nestjs/platform-express':
         specifier: ^11.0.1
         version: 11.1.19(@nestjs/common@11.1.19(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.6.1
       pg:
         specifier: ^8.13.1
         version: 8.20.0
@@ -512,9 +515,9 @@ packages:
       '@types/node':
         optional: true
 
-  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/51179a58d35e04ed2a2acb7a7fe42f20e5d44807':
-    resolution: {tarball: https://codeload.github.com/isoniaos/types/tar.gz/51179a58d35e04ed2a2acb7a7fe42f20e5d44807}
-    version: 0.5.0-alpha.2
+  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/22e6625a421a63f6169df24f85f61af090c27c31':
+    resolution: {tarball: https://codeload.github.com/isoniaos/types/tar.gz/22e6625a421a63f6169df24f85f61af090c27c31}
+    version: 0.5.0-alpha.3
 
   '@istanbuljs/load-nyc-config@1.1.0':
     resolution: {integrity: sha512-VjeHSlIzpv/NyD3N0YuHfXOPDIixcA1q2ZV98wsMqcYlPmv2n3Yb2lYP9XMElnaFVXg5A7YLTeLu6V84uQDjmQ==}
@@ -1749,6 +1752,10 @@ packages:
   diff@4.0.4:
     resolution: {integrity: sha512-X07nttJQkwkfKfvTPG/KSnE2OMdcUCao6+eXF3wmnIQRn2aPAHH3VxDbDOdegkd6JbPsXqShpvEOHfAT+nCNwQ==}
     engines: {node: '>=0.3.1'}
+
+  dotenv@16.6.1:
+    resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
+    engines: {node: '>=12'}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -3927,7 +3934,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.19.17
 
-  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/51179a58d35e04ed2a2acb7a7fe42f20e5d44807': {}
+  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/22e6625a421a63f6169df24f85f61af090c27c31': {}
 
   '@istanbuljs/load-nyc-config@1.1.0':
     dependencies:
@@ -5332,6 +5339,8 @@ snapshots:
   diff-sequences@29.6.3: {}
 
   diff@4.0.4: {}
+
+  dotenv@16.6.1: {}
 
   dunder-proto@1.0.1:
     dependencies:
