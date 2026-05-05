@@ -1,10 +1,9 @@
 {
   "name": "@isonia/control-plane",
   "version": "0.5.0-alpha.3",
-  "description": "Control plane for Isonia OS",
+  "description": "Public IsoniaOS Control Plane for governance indexing, projections, diagnostics, and REST read APIs",
   "author": "IsoniaOS Team <info@isonia.org>",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "build": "nest build",
     "postbuild": "node -e \"const fs=require('fs'); fs.copyFileSync('package.json','dist/package.json');\"",
@@ -88,5 +87,16 @@
     "setupFiles": [
       "dotenv/config"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isoniaos/control-plane.git"
+  },
+  "bugs": {
+    "url": "https://github.com/isoniaos/control-plane/issues"
+  },
+  "homepage": "https://github.com/isoniaos/control-plane#readme",
+  "engines": {
+    "node": ">=18"
   }
 }

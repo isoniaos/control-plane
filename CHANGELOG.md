@@ -8,6 +8,19 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ### Added
 
+- Added `SECURITY.md` with alpha security posture, authority model, vulnerability reporting, diagnostics safety, and secret-handling guidance.
+- Added `CONTRIBUTING.md` with local setup, verification commands, repository boundaries, and change-category rules.
+- Added `LICENSE` for the public MIT-licensed Control Plane repository.
+- Added `PUBLICATION-CHECKLIST.md` for making the existing repository public safely.
+
+### Changed
+
+- Updated `AGENTS.md` with Control Plane-specific AI agent rules, public repository boundaries, authority model guardrails, v0.6 scope limits, and verification expectations.
+- Updated `README.md` to describe Control Plane as part of the public open-source core and to document authority, repository boundary, security status, and verification commands.
+- Updated `package.json` metadata for public repository publication by removing the private package flag and setting the license to MIT.
+
+### Added
+
 - Added v0.6 repository preparation context under `Unreleased`.
 - Added `pnpm dev` as the complete local runtime for API, indexer, and projection worker.
 - Added runtime startup logs for the API, indexer, and projection worker.
