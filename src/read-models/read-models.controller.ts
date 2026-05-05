@@ -23,7 +23,9 @@ export class ReadModelsController {
   }
 
   @Get('orgs/:orgId')
-  async getOrganization(@Param('orgId') orgId: string): Promise<OrganizationDto> {
+  async getOrganization(
+    @Param('orgId') orgId: string,
+  ): Promise<OrganizationDto> {
     const organization = await this.readModels.getOrganization(orgId);
     if (!organization) {
       throw new NotFoundException('Organization not found');
@@ -32,7 +34,9 @@ export class ReadModelsController {
   }
 
   @Get('orgs/:orgId/overview')
-  async getOverview(@Param('orgId') orgId: string): Promise<OrganizationOverviewDto> {
+  async getOverview(
+    @Param('orgId') orgId: string,
+  ): Promise<OrganizationOverviewDto> {
     const overview = await this.readModels.getOverview(orgId);
     if (!overview) {
       throw new NotFoundException('Organization not found');
@@ -56,7 +60,10 @@ export class ReadModelsController {
   }
 
   @Get('orgs/:orgId/holders/:address/mandates')
-  getHolderMandates(@Param('orgId') orgId: string, @Param('address') address: string): Promise<MandateDto[]> {
+  getHolderMandates(
+    @Param('orgId') orgId: string,
+    @Param('address') address: string,
+  ): Promise<MandateDto[]> {
     return this.readModels.getHolderMandates(orgId, address);
   }
 
@@ -71,7 +78,10 @@ export class ReadModelsController {
   }
 
   @Get('orgs/:orgId/proposals/:proposalId')
-  async getProposal(@Param('orgId') orgId: string, @Param('proposalId') proposalId: string): Promise<ProposalDto> {
+  async getProposal(
+    @Param('orgId') orgId: string,
+    @Param('proposalId') proposalId: string,
+  ): Promise<ProposalDto> {
     const proposal = await this.readModels.getProposal(orgId, proposalId);
     if (!proposal) {
       throw new NotFoundException('Proposal not found');

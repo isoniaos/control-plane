@@ -23,9 +23,14 @@ interface TestRawEvent extends QueryResultRow {
 
 interface ProjectionHarness {
   readonly service: ProjectionService;
-  readonly clientQuery: jest.Mock;
-  readonly dbQuery: jest.Mock;
+  readonly clientQuery: QueryMock;
+  readonly dbQuery: QueryMock;
 }
+
+type QueryMock = jest.Mock<
+  Promise<QueryResult<QueryResultRow>>,
+  [sql: string, values?: unknown[]]
+>;
 
 describe('ProjectionService', () => {
   it('claims only configured-chain projection rows with FOR UPDATE SKIP LOCKED', async () => {
@@ -124,22 +129,26 @@ describe('ProjectionService', () => {
 
 function createProjectionHarness(events: TestRawEvent[]): ProjectionHarness {
   const pendingEvents = [...events];
-  const clientQuery = jest.fn(async (sql: string, values?: unknown[]) => {
+  const clientQuery: QueryMock = jest.fn((sql: string, values?: unknown[]) => {
     const normalized = normalizeSql(sql);
     if (normalized.includes('from raw_events')) {
       const event = pendingEvents.shift();
-      return queryResult(event ? [event] : []);
+      return Promise.resolve(queryResult(event ? [event] : []));
     }
     if (normalized.includes('from policy_rules')) {
-      return queryResult([{ required_approval_bodies: [] }]);
+      return Promise.resolve(queryResult([{ required_approval_bodies: [] }]));
     }
-    return queryResult([], values);
+    return Promise.resolve(queryResult([], values));
   });
   const client = { query: clientQuery } as unknown as PoolClient;
-  const dbQuery = jest.fn(async () => queryResult([]));
+  const dbQuery: QueryMock = jest.fn((sql: string, values?: unknown[]) => {
+    void sql;
+    void values;
+    return Promise.resolve(queryResult([]));
+  });
   const db = {
     transaction: jest.fn(
-      async (work: (transactionClient: PoolClient) => Promise<unknown>) =>
+      (work: (transactionClient: PoolClient) => Promise<unknown>) =>
         work(client),
     ),
     query: dbQuery,
@@ -194,14 +203,15 @@ function proposalStatusChangedEvent(id: string): TestRawEvent {
   };
 }
 
-function findSqlCall(query: jest.Mock, needle: string): [string, unknown[]] {
+function findSqlCall(query: QueryMock, needle: string): [string, unknown[]] {
   const call = query.mock.calls.find(([sql]) =>
     normalizeSql(sql).includes(needle),
   );
   if (!call) {
     throw new Error(`SQL call not found: ${needle}`);
   }
-  return call as [string, unknown[]];
+  const [sql, values = []] = call;
+  return [sql, values];
 }
 
 function normalizeSql(sql: unknown): string {

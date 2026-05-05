@@ -5,10 +5,27 @@ import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
 import { IndexerService } from './indexer.service';
 
+type IndexedLog = Log & {
+  readonly blockNumber: bigint;
+  readonly blockHash: `0x${string}`;
+  readonly transactionHash: `0x${string}`;
+  readonly logIndex: number;
+};
+
+interface QueryResultStub {
+  readonly rowCount: number;
+  readonly rows: Record<string, unknown>[];
+}
+
+type QueryMock = jest.Mock<
+  Promise<QueryResultStub>,
+  [sql: string, values?: unknown[]]
+>;
+
 describe('IndexerService', () => {
   it('deduplicates raw events by logical event identity', async () => {
-    const query = jest
-      .fn()
+    const query: QueryMock = jest
+      .fn<Promise<QueryResultStub>, [sql: string, values?: unknown[]]>()
       .mockResolvedValueOnce({ rowCount: 1, rows: [] })
       .mockResolvedValueOnce({ rowCount: 0, rows: [] });
     const db = { query } as unknown as DatabaseService;
@@ -18,15 +35,19 @@ describe('IndexerService', () => {
       confirmations: 0,
     } as AppConfigService;
     const service = new IndexerService(config, db);
+    const serviceWithPrivate = service as unknown as {
+      insertRawEvent(
+        log: IndexedLog,
+        decoded: DecodedGovernanceLog,
+        blockTimestamp: string,
+      ): Promise<number>;
+    };
     const insertRawEvent = (
-      service as unknown as {
-        insertRawEvent(
-          log: Log,
-          decoded: DecodedGovernanceLog,
-          blockTimestamp: string,
-        ): Promise<number>;
-      }
-    ).insertRawEvent.bind(service);
+      eventLog: IndexedLog,
+      decodedLog: DecodedGovernanceLog,
+      blockTimestamp: string,
+    ) =>
+      serviceWithPrivate.insertRawEvent(eventLog, decodedLog, blockTimestamp);
     const log = {
       address: '0x0000000000000000000000000000000000000001',
       blockNumber: 10n,
@@ -35,7 +56,7 @@ describe('IndexerService', () => {
       logIndex: 2,
       topics: [],
       data: '0x',
-    } as unknown as Log;
+    } as unknown as IndexedLog;
     const decoded: DecodedGovernanceLog = {
       eventName: GovernanceEventName.OrganizationCreated,
       args: {
@@ -49,9 +70,11 @@ describe('IndexerService', () => {
     await expect(insertRawEvent(log, decoded, '100')).resolves.toBe(1);
     await expect(insertRawEvent(log, decoded, '100')).resolves.toBe(0);
 
-    const insertSql = String(query.mock.calls[0][0])
-      .replace(/\s+/g, ' ')
-      .toLowerCase();
+    const firstCall = query.mock.calls[0];
+    if (!firstCall) {
+      throw new Error('Expected insert query to be called');
+    }
+    const insertSql = String(firstCall[0]).replace(/\s+/g, ' ').toLowerCase();
     expect(insertSql).toContain(
       'on conflict (chain_id, tx_hash, log_index) do nothing',
     );

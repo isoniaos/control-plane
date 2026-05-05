@@ -39,7 +39,18 @@ export interface DecodedGovernanceLog {
   readonly args: GovernanceEventArgsDto | JsonObject;
 }
 
-export function normalizeDecodedGovernanceLog(eventName: string, args: Record<string, unknown>): DecodedGovernanceLog | undefined {
+const GOVERNANCE_EVENT_NAMES: ReadonlySet<string> = new Set(
+  Object.values(GovernanceEventName),
+);
+
+export function normalizeDecodedGovernanceLog(
+  eventName: string,
+  args: Record<string, unknown>,
+): DecodedGovernanceLog | undefined {
+  if (!isGovernanceEventName(eventName)) {
+    return undefined;
+  }
+
   switch (eventName) {
     case GovernanceEventName.OrganizationCreated:
       return {
@@ -226,20 +237,36 @@ export function normalizeDecodedGovernanceLog(eventName: string, args: Record<st
   }
 }
 
+function isGovernanceEventName(value: string): value is GovernanceEventName {
+  return GOVERNANCE_EVENT_NAMES.has(value);
+}
+
 export function toBodyKind(value: unknown): BodyKind {
   return enumOrChainValue(value, BodyKind, BODY_KIND_CHAIN_MAP.valuesByCode);
 }
 
 export function toOrganizationStatus(value: unknown): OrganizationStatus {
-  return enumOrChainValue(value, OrganizationStatus, ORGANIZATION_STATUS_CHAIN_MAP.valuesByCode);
+  return enumOrChainValue(
+    value,
+    OrganizationStatus,
+    ORGANIZATION_STATUS_CHAIN_MAP.valuesByCode,
+  );
 }
 
 export function toProposalStatus(value: unknown): ProposalStatus {
-  return enumOrChainValue(value, ProposalStatus, PROPOSAL_STATUS_CHAIN_MAP.valuesByCode);
+  return enumOrChainValue(
+    value,
+    ProposalStatus,
+    PROPOSAL_STATUS_CHAIN_MAP.valuesByCode,
+  );
 }
 
 export function toProposalType(value: unknown): ProposalType {
-  return enumOrChainValue(value, ProposalType, PROPOSAL_TYPE_CHAIN_MAP.valuesByCode);
+  return enumOrChainValue(
+    value,
+    ProposalType,
+    PROPOSAL_TYPE_CHAIN_MAP.valuesByCode,
+  );
 }
 
 export function toRoleType(value: unknown): RoleType {
@@ -251,7 +278,10 @@ function enumOrChainValue<T extends string>(
   enumObject: Readonly<Record<string, T>>,
   valuesByCode: Readonly<Record<number, T>>,
 ): T {
-  if (typeof value === 'string' && Object.values(enumObject).includes(value as T)) {
+  if (
+    typeof value === 'string' &&
+    Object.values(enumObject).includes(value as T)
+  ) {
     return value as T;
   }
 

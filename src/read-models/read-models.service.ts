@@ -66,6 +66,49 @@ interface ProposalDecisionRow {
   readonly decided_at_chain: string;
 }
 
+interface GraphOrganizationRow {
+  readonly chainId: number;
+  readonly org_id: string;
+  readonly name: string;
+}
+
+interface GraphBodyRow {
+  readonly body_id: string;
+  readonly name: string;
+  readonly kind: string;
+}
+
+interface GraphRoleRow {
+  readonly role_id: string;
+  readonly name: string;
+  readonly role_type: string;
+}
+
+interface GraphHolderRow {
+  readonly holder_address: string;
+}
+
+interface GraphProposalRow {
+  readonly proposal_id: string;
+  readonly title: string;
+  readonly status: ProposalStatus;
+}
+
+interface GraphEdgeRow {
+  readonly sourceType: string;
+  readonly sourceId: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly type: GraphEdgeType;
+  readonly label: string | null;
+  readonly metadata: JsonObject | null;
+}
+
+interface BodyNameRow {
+  readonly body_id: string;
+  readonly name: string;
+}
+
 @Injectable()
 export class ReadModelsService {
   constructor(private readonly db: DatabaseService) {}
@@ -198,7 +241,7 @@ export class ReadModelsService {
   }
 
   async getPolicies(orgId: string): Promise<OrganizationPoliciesDto> {
-    const result = await this.db.query(
+    const result = await this.db.query<CurrentPolicyRuleRow>(
       `
         select chain_id::int as "chainId", org_id as "orgId", proposal_type as "proposalType",
                version, required_approval_bodies, veto_bodies, executor_body,
@@ -209,7 +252,7 @@ export class ReadModelsService {
       `,
       [orgId],
     );
-    return (result.rows as CurrentPolicyRuleRow[]).map((row) =>
+    return result.rows.map((row) =>
       normalizeRow<OrganizationPolicyDto>({
         chainId: row.chainId,
         orgId: row.orgId,
@@ -271,16 +314,16 @@ export class ReadModelsService {
     orgId: string,
     proposalId: string,
   ): Promise<ProposalRouteExplanationDto | undefined> {
-    const proposalResult = await this.db.query(
+    const proposalResult = await this.db.query<ProposalRouteRow>(
       `select * from proposals where org_id = $1 and proposal_id = $2`,
       [orgId, proposalId],
     );
-    const proposal = proposalResult.rows[0] as ProposalRouteRow | undefined;
+    const proposal = proposalResult.rows[0];
     if (!proposal) {
       return undefined;
     }
 
-    const policyResult = await this.db.query(
+    const policyResult = await this.db.query<PolicyRuleRow>(
       `
         select *
         from policy_rules
@@ -293,7 +336,7 @@ export class ReadModelsService {
         proposal.policy_version,
       ],
     );
-    const policy = policyResult.rows[0] as PolicyRuleRow | undefined;
+    const policy = policyResult.rows[0];
     const requiredBodies = policy
       ? asStringArray(policy.required_approval_bodies)
       : [];
@@ -447,27 +490,27 @@ export class ReadModelsService {
   async getGraph(orgId: string): Promise<GovernanceGraphDto | undefined> {
     const [organizations, bodies, roles, holders, proposals, edges] =
       await Promise.all([
-        this.db.query(
+        this.db.query<GraphOrganizationRow>(
           `select chain_id::int as "chainId", org_id, name from organizations where org_id = $1`,
           [orgId],
         ),
-        this.db.query(
+        this.db.query<GraphBodyRow>(
           `select body_id, name, kind from bodies where org_id = $1`,
           [orgId],
         ),
-        this.db.query(
+        this.db.query<GraphRoleRow>(
           `select role_id, name, role_type from roles where org_id = $1`,
           [orgId],
         ),
-        this.db.query(
+        this.db.query<GraphHolderRow>(
           `select distinct holder_address from mandates where org_id = $1`,
           [orgId],
         ),
-        this.db.query(
+        this.db.query<GraphProposalRow>(
           `select proposal_id, title, status from proposals where org_id = $1`,
           [orgId],
         ),
-        this.db.query(
+        this.db.query<GraphEdgeRow>(
           `
           select source_type as "sourceType", source_id as "sourceId", target_type as "targetType",
                  target_id as "targetId", edge_type as "type", label, metadata
@@ -520,15 +563,15 @@ export class ReadModelsService {
         id: `edge:${index + 1}`,
         sourceId: `${edge.sourceType}:${edge.sourceId}`,
         targetId: `${edge.targetType}:${edge.targetId}`,
-        type: edge.type as GraphEdgeType,
+        type: edge.type,
         label: edge.label,
-        metadata: edge.metadata as JsonObject,
+        metadata: edge.metadata ?? {},
       })),
     });
   }
 
   private async getBodyNameMap(orgId: string): Promise<Map<string, string>> {
-    const result = await this.db.query(
+    const result = await this.db.query<BodyNameRow>(
       `select body_id, name from bodies where org_id = $1`,
       [orgId],
     );
@@ -542,7 +585,7 @@ export class ReadModelsService {
     orgId: string,
     proposalId: string,
   ): Promise<Map<string, ProposalDecisionRow>> {
-    const result = await this.db.query(
+    const result = await this.db.query<ProposalDecisionRow>(
       `
         select body_id, decision_type, actor_address, tx_hash, decided_at_chain
         from proposal_decisions
@@ -551,10 +594,7 @@ export class ReadModelsService {
       [chainId, orgId, proposalId],
     );
     return new Map(
-      result.rows.map((row) => [
-        `${row.body_id}:${row.decision_type}`,
-        row as ProposalDecisionRow,
-      ]),
+      result.rows.map((row) => [`${row.body_id}:${row.decision_type}`, row]),
     );
   }
 }

@@ -21,14 +21,15 @@ describe('DiagnosticsController', () => {
       staleDataIndicators: [],
       generatedAt: '2026-04-29T12:00:00.000Z',
     };
+    const getDiagnostics = jest.fn(() => Promise.resolve(diagnostics));
     const service = {
-      getDiagnostics: jest.fn().mockResolvedValue(diagnostics),
+      getDiagnostics,
       getIndexerDiagnostics: jest.fn(),
     } as unknown as DiagnosticsService;
     const controller = new DiagnosticsController(service);
 
     await expect(controller.getDiagnostics()).resolves.toBe(diagnostics);
-    expect(service.getDiagnostics).toHaveBeenCalledTimes(1);
+    expect(getDiagnostics).toHaveBeenCalledTimes(1);
   });
 
   it('returns indexer diagnostics from the service', async () => {
@@ -64,13 +65,14 @@ describe('DiagnosticsController', () => {
         failedProjectionCount: 0,
       },
     };
+    const getIndexerDiagnostics = jest.fn(() => Promise.resolve(diagnostics));
     const service = {
       getDiagnostics: jest.fn(),
-      getIndexerDiagnostics: jest.fn().mockResolvedValue(diagnostics),
+      getIndexerDiagnostics,
     } as unknown as DiagnosticsService;
     const controller = new DiagnosticsController(service);
 
     await expect(controller.getIndexerDiagnostics()).resolves.toBe(diagnostics);
-    expect(service.getIndexerDiagnostics).toHaveBeenCalledTimes(1);
+    expect(getIndexerDiagnostics).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,15 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createPublicClient, decodeEventLog, http, type Address, type Log } from 'viem';
+import {
+  createPublicClient,
+  decodeEventLog,
+  http,
+  type Log,
+  type PublicClient,
+} from 'viem';
 import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
 import { ISONIA_EVENT_ABI } from '../chain/isonia-abi';
-import { type DecodedGovernanceLog, normalizeDecodedGovernanceLog } from '../chain/governance-events';
+import {
+  type DecodedGovernanceLog,
+  normalizeDecodedGovernanceLog,
+} from '../chain/governance-events';
 import { toJsonValue } from '../chain/json';
 
 @Injectable()
 export class IndexerService {
   private readonly logger = new Logger(IndexerService.name);
-  private readonly client;
+  private readonly client: PublicClient;
 
   constructor(
     private readonly config: AppConfigService,
@@ -20,43 +29,58 @@ export class IndexerService {
     });
   }
 
-  async runOnce(): Promise<{ fromBlock: bigint; toBlock: bigint; inserted: number } | undefined> {
+  async runOnce(): Promise<
+    { fromBlock: bigint; toBlock: bigint; inserted: number } | undefined
+  > {
     const addresses = this.config.contractAddresses;
     if (addresses.length === 0) {
-      throw new Error('GOV_CORE_ADDRESS and/or GOV_PROPOSALS_ADDRESS must be set before indexing');
+      throw new Error(
+        'GOV_CORE_ADDRESS and/or GOV_PROPOSALS_ADDRESS must be set before indexing',
+      );
     }
 
     const latestBlock = await this.client.getBlockNumber();
-    const latestSafeBlock = latestBlock > BigInt(this.config.confirmations) ? latestBlock - BigInt(this.config.confirmations) : 0n;
+    const latestSafeBlock =
+      latestBlock > BigInt(this.config.confirmations)
+        ? latestBlock - BigInt(this.config.confirmations)
+        : 0n;
     const fromBlock = await this.nextFromBlock(addresses);
     if (fromBlock > latestSafeBlock) {
       return undefined;
     }
-    const toBlock = minBigInt(fromBlock + this.config.blockRangeSize - 1n, latestSafeBlock);
+    const toBlock = minBigInt(
+      fromBlock + this.config.blockRangeSize - 1n,
+      latestSafeBlock,
+    );
     const blockTimestampCache = new Map<bigint, string>();
     let inserted = 0;
 
     for (const address of addresses) {
       const logs = await this.client.getLogs({
-        address: address as Address,
+        address: address,
         fromBlock,
         toBlock,
       });
       for (const log of logs) {
-        if (log.blockNumber === null || log.blockHash === null || log.transactionHash === null || log.logIndex === null) {
+        if (!hasIndexedLogIdentity(log)) {
           continue;
         }
         const decoded = this.decodeLog(log);
         if (!decoded) {
           continue;
         }
-        const blockTimestamp = await this.blockTimestamp(log.blockNumber, blockTimestampCache);
+        const blockTimestamp = await this.blockTimestamp(
+          log.blockNumber,
+          blockTimestampCache,
+        );
         inserted += await this.insertRawEvent(log, decoded, blockTimestamp);
       }
       await this.updateCursor(address, toBlock);
     }
 
-    this.logger.log(`Indexed ${inserted} events from blocks ${fromBlock.toString()}-${toBlock.toString()}`);
+    this.logger.log(
+      `Indexed ${inserted} events from blocks ${fromBlock.toString()}-${toBlock.toString()}`,
+    );
     return { fromBlock, toBlock, inserted };
   }
 
@@ -79,7 +103,9 @@ export class IndexerService {
     }
   }
 
-  private async nextFromBlock(addresses: readonly `0x${string}`[]): Promise<bigint> {
+  private async nextFromBlock(
+    addresses: readonly `0x${string}`[],
+  ): Promise<bigint> {
     const result = await this.db.query<{ last_scanned_block: string }>(
       `
         select min(last_scanned_block) as last_scanned_block
@@ -102,13 +128,19 @@ export class IndexerService {
         topics: log.topics,
         data: log.data,
       });
-      return normalizeDecodedGovernanceLog(decoded.eventName, toJsonValue(decoded.args) as Record<string, unknown>);
+      return normalizeDecodedGovernanceLog(
+        decoded.eventName,
+        toJsonValue(decoded.args) as Record<string, unknown>,
+      );
     } catch {
       return undefined;
     }
   }
 
-  private async blockTimestamp(blockNumber: bigint, cache: Map<bigint, string>): Promise<string> {
+  private async blockTimestamp(
+    blockNumber: bigint,
+    cache: Map<bigint, string>,
+  ): Promise<string> {
     const cached = cache.get(blockNumber);
     if (cached) {
       return cached;
@@ -119,7 +151,11 @@ export class IndexerService {
     return timestamp;
   }
 
-  private async insertRawEvent(log: Log, decoded: DecodedGovernanceLog, blockTimestamp: string): Promise<number> {
+  private async insertRawEvent(
+    log: IndexedLog,
+    decoded: DecodedGovernanceLog,
+    blockTimestamp: string,
+  ): Promise<number> {
     const result = await this.db.query(
       `
         insert into raw_events (
@@ -143,11 +179,11 @@ export class IndexerService {
       [
         this.config.chainId,
         log.address,
-        log.blockNumber!.toString(),
-        log.blockHash!,
+        log.blockNumber.toString(),
+        log.blockHash,
         blockTimestamp,
-        log.transactionHash!,
-        log.logIndex!,
+        log.transactionHash,
+        log.logIndex,
         decoded.eventName,
         JSON.stringify(decoded.args),
         JSON.stringify(toJsonValue(log)),
@@ -157,7 +193,10 @@ export class IndexerService {
     return result.rowCount ?? 0;
   }
 
-  private async updateCursor(address: `0x${string}`, blockNumber: bigint): Promise<void> {
+  private async updateCursor(
+    address: `0x${string}`,
+    blockNumber: bigint,
+  ): Promise<void> {
     await this.db.query(
       `
         insert into chain_cursors (chain_id, contract_address, last_scanned_block, last_confirmed_block, updated_at)
@@ -171,6 +210,22 @@ export class IndexerService {
       [this.config.chainId, address, blockNumber.toString()],
     );
   }
+}
+
+type IndexedLog = Log & {
+  readonly blockNumber: bigint;
+  readonly blockHash: `0x${string}`;
+  readonly transactionHash: `0x${string}`;
+  readonly logIndex: number;
+};
+
+function hasIndexedLogIdentity(log: Log): log is IndexedLog {
+  return (
+    log.blockNumber !== null &&
+    log.blockHash !== null &&
+    log.transactionHash !== null &&
+    log.logIndex !== null
+  );
 }
 
 function minBigInt(left: bigint, right: bigint): bigint {

@@ -54,7 +54,10 @@ export class RuntimeHeartbeatService implements OnModuleDestroy {
     };
 
     void writeHeartbeat();
-    const timer = setInterval(() => void writeHeartbeat(), HEARTBEAT_INTERVAL_MS);
+    const timer = setInterval(
+      () => void writeHeartbeat(),
+      HEARTBEAT_INTERVAL_MS,
+    );
     this.timers.push(timer);
     return timer;
   }

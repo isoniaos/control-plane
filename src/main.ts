@@ -32,4 +32,4 @@ async function bootstrap() {
     `API started port=${config.port} chainId=${config.chainId} apiVersion=${CONTROL_PLANE_API_VERSION} packageVersion=${packageVersion}`,
   );
 }
-bootstrap();
+void bootstrap();

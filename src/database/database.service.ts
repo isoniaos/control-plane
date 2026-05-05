@@ -11,7 +11,10 @@ export class DatabaseService implements OnModuleDestroy {
     this.pool = new Pool({ connectionString: config.databaseUrl });
   }
 
-  query<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []): Promise<QueryResult<T>> {
+  query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values: unknown[] = [],
+  ): Promise<QueryResult<T>> {
     return this.pool.query<T>(text, values);
   }
 

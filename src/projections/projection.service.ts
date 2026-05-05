@@ -46,6 +46,10 @@ interface LastProjectedCursorRow {
   readonly processed_at: Date | string;
 }
 
+interface ProposalPolicyLookupRow {
+  readonly required_approval_bodies: unknown;
+}
+
 @Injectable()
 export class ProjectionService {
   private readonly logger = new Logger(ProjectionService.name);
@@ -603,7 +607,7 @@ export class ProjectionService {
     const orgId = stringArg(event.args, 'orgId');
     const proposalType = toProposalType(arg(event.args, 'proposalType'));
     const metadataUri = stringArg(event.args, 'metadataUri', 'metadataURI');
-    const policy = await client.query(
+    const policy = await client.query<ProposalPolicyLookupRow>(
       `
         select required_approval_bodies
         from policy_rules
@@ -616,8 +620,9 @@ export class ProjectionService {
         stringArg(event.args, 'policyVersion'),
       ],
     );
-    const requiredApprovalBodies = (policy.rows[0]?.required_approval_bodies ??
-      []) as unknown[];
+    const requiredApprovalBodies = asStringArray(
+      policy.rows[0]?.required_approval_bodies ?? [],
+    );
     const initialStatus =
       requiredApprovalBodies.length === 0
         ? ProposalStatus.Approved

@@ -15,6 +15,15 @@ interface RouteFixture {
   readonly bodies?: readonly Record<string, unknown>[];
 }
 
+interface QueryResultStub {
+  readonly rows: Record<string, unknown>[];
+}
+
+type QueryMock = jest.Mock<
+  Promise<QueryResultStub>,
+  [sql: string, params?: unknown[]]
+>;
+
 describe('ReadModelsService', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -219,46 +228,50 @@ describe('ReadModelsService', () => {
 
 function createRouteService(fixture: RouteFixture): {
   service: ReadModelsService;
-  query: jest.Mock;
+  query: QueryMock;
 } {
-  const query = jest.fn(async (sql: string) => {
+  const query: QueryMock = jest.fn((sql: string) => {
     const normalized = normalizeSql(sql);
     if (normalized.includes('from proposals')) {
-      return {
+      return Promise.resolve({
         rows:
           fixture.proposal === undefined ? [proposal()] : [fixture.proposal],
-      };
+      });
     }
     if (normalized.includes('from policy_rules')) {
-      return {
+      return Promise.resolve({
         rows: Object.prototype.hasOwnProperty.call(fixture, 'policy')
           ? fixture.policy
             ? [fixture.policy]
             : []
           : [policy()],
-      };
+      });
     }
     if (normalized.includes('from bodies')) {
-      return { rows: fixture.bodies ?? [{ body_id: '1', name: 'Council' }] };
+      return Promise.resolve({
+        rows: [...(fixture.bodies ?? [{ body_id: '1', name: 'Council' }])],
+      });
     }
     if (normalized.includes('from proposal_decisions')) {
-      return { rows: fixture.decisions ?? [approvalDecision('1')] };
+      return Promise.resolve({
+        rows: [...(fixture.decisions ?? [approvalDecision('1')])],
+      });
     }
-    return { rows: [] };
+    return Promise.resolve({ rows: [] });
   });
   const db = { query } as unknown as DatabaseService;
   return { service: new ReadModelsService(db), query };
 }
 
-function createPolicyListService(
-  rows: readonly Record<string, unknown>[],
-): {
+function createPolicyListService(rows: readonly Record<string, unknown>[]): {
   service: ReadModelsService;
-  query: jest.Mock;
+  query: QueryMock;
 } {
-  const query = jest.fn(async (_sql: string, params?: readonly unknown[]) => ({
-    rows: rows.filter((row) => row.orgId === params?.[0]),
-  }));
+  const query: QueryMock = jest.fn((_sql: string, params?: unknown[]) =>
+    Promise.resolve({
+      rows: rows.filter((row) => row.orgId === params?.[0]),
+    }),
+  );
   const db = { query } as unknown as DatabaseService;
   return { service: new ReadModelsService(db), query };
 }

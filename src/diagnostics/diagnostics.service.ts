@@ -12,7 +12,7 @@ import type {
   NumericString,
   TransactionHash,
 } from '@isonia/types';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, type PublicClient } from 'viem';
 import { AppConfigService } from '../config/app-config.service';
 import { maskUrl } from '../config/safe-url';
 import { DatabaseService } from '../database/database.service';
@@ -98,7 +98,7 @@ export interface IndexerDiagnosticsDto {
 
 @Injectable()
 export class DiagnosticsService {
-  private readonly client;
+  private readonly client: PublicClient;
 
   constructor(
     private readonly config: AppConfigService,
@@ -214,10 +214,7 @@ export class DiagnosticsService {
   private getConfiguredContracts(): DiagnosticsContractDto[] {
     return [
       toContractDto('govCore', this.config.contracts.govCoreAddress),
-      toContractDto(
-        'govProposals',
-        this.config.contracts.govProposalsAddress,
-      ),
+      toContractDto('govProposals', this.config.contracts.govProposalsAddress),
     ];
   }
 
@@ -502,7 +499,8 @@ export class DiagnosticsService {
       indicators.push({
         code: 'latest_chain_block_unavailable',
         severity: 'warning',
-        message: 'Latest chain block is unavailable from the configured RPC endpoint.',
+        message:
+          'Latest chain block is unavailable from the configured RPC endpoint.',
       });
     }
 
