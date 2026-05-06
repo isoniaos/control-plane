@@ -15,6 +15,7 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ### Changed
 
+- Added repository line-ending policy with `.gitattributes` for v0.6 hardening.
 - Updated `AGENTS.md` with Control Plane-specific AI agent rules, public repository boundaries, authority model guardrails, v0.6 scope limits, and verification expectations.
 - Updated `README.md` to describe Control Plane as part of the public open-source core and to document authority, repository boundary, security status, and verification commands.
 - Updated `package.json` metadata for public repository publication by removing the private package flag and setting the license to MIT.
