@@ -97,6 +97,6 @@
   },
   "homepage": "https://github.com/isoniaos/control-plane#readme",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }
