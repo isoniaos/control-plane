@@ -6,6 +6,8 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+## [0.6.0-alpha.2]
+
 ### Added
 
 - Added `SECURITY.md` with alpha security posture, authority model, vulnerability reporting, diagnostics safety, and secret-handling guidance.
@@ -78,6 +80,7 @@ All notable changes to `@isonia/control-plane` are documented here.
 - Initial NestJS/PostgreSQL/viem Control Plane with indexing, projections, REST read models, diagnostics, and local scripts.
 
 [Unreleased]: https://github.com/isoniaos/control-plane/compare/v0.5.0-alpha.3...HEAD
+[0.6.0-alpha.2]: https://github.com/isoniaos/control-plane/releases/tag/v0.6.0-alpha.2
 [0.5.0-alpha.3]: https://github.com/isoniaos/control-plane/releases/tag/v0.5.0-alpha.3
 [0.5.0-alpha.2]: https://github.com/isoniaos/control-plane/releases/tag/v0.5.0-alpha.2
 [0.5.0-alpha.1]: https://github.com/isoniaos/control-plane/releases/tag/v0.5.0-alpha.1
