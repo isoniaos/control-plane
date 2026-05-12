@@ -26,4 +26,17 @@ describe('CONTROL_PLANE_SCHEMA_SQL', () => {
     expect(sql).toContain('create table if not exists runtime_heartbeats');
     expect(sql).toContain('primary key(chain_id, process_name)');
   });
+
+  it('stores organization finalization read-model metadata', () => {
+    expect(sql).toContain(
+      "finalization_status text not null default 'unknown'",
+    );
+    expect(sql).toContain('finalized_admin_address text');
+    expect(sql).toContain('finalized_block bigint');
+    expect(sql).toContain('finalized_tx_hash text');
+    expect(sql).toContain('finalized_at_chain numeric');
+    expect(sql).toContain(
+      'alter table organizations add column if not exists finalization_status',
+    );
+  });
 });

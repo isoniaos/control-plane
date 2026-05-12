@@ -4,6 +4,7 @@ import type {
   GovernanceGraphDto,
   MandateDto,
   OrganizationDto,
+  OrganizationFinalizationReadModelDto,
   OrganizationOverviewDto,
   OrganizationPoliciesDto,
   ProposalDto,
@@ -31,6 +32,18 @@ export class ReadModelsController {
       throw new NotFoundException('Organization not found');
     }
     return organization;
+  }
+
+  @Get('orgs/:orgId/finalization')
+  async getOrganizationFinalization(
+    @Param('orgId') orgId: string,
+  ): Promise<OrganizationFinalizationReadModelDto> {
+    const finalization =
+      await this.readModels.getOrganizationFinalization(orgId);
+    if (!finalization) {
+      throw new NotFoundException('Organization not found');
+    }
+    return finalization;
   }
 
   @Get('orgs/:orgId/overview')

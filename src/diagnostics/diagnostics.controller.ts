@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
-import type { DiagnosticsDto } from '@isonia/types';
 import {
   DiagnosticsService,
+  type ControlPlaneDiagnosticsDto,
   type IndexerDiagnosticsDto,
 } from './diagnostics.service';
 
@@ -10,7 +10,7 @@ export class DiagnosticsController {
   constructor(private readonly diagnostics: DiagnosticsService) {}
 
   @Get('diagnostics')
-  getDiagnostics(): Promise<DiagnosticsDto> {
+  getDiagnostics(): Promise<ControlPlaneDiagnosticsDto> {
     return this.diagnostics.getDiagnostics();
   }
 

@@ -11,6 +11,7 @@ import {
   type MandateAssignedEventArgsDto,
   type MandateRevokedEventArgsDto,
   type OrganizationCreatedEventArgsDto,
+  type OrganizationFinalizedEventArgsDto,
   type OrganizationStatusChangedEventArgsDto,
   type OrganizationUpdatedEventArgsDto,
   ORGANIZATION_STATUS_CHAIN_MAP,
@@ -77,6 +78,14 @@ export function normalizeDecodedGovernanceLog(
           orgId: asString(args.orgId),
           status: toOrganizationStatus(args.status),
         } satisfies OrganizationStatusChangedEventArgsDto,
+      };
+    case GovernanceEventName.OrganizationFinalized:
+      return {
+        eventName,
+        args: {
+          orgId: asString(args.orgId),
+          admin: asAddress(args.admin),
+        } satisfies OrganizationFinalizedEventArgsDto,
       };
     case GovernanceEventName.BodyCreated:
       return {

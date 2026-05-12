@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  type Address,
   type BodyDto,
   DecisionType,
   type GovernanceGraphDto,
@@ -7,7 +8,9 @@ import {
   GraphNodeType,
   type JsonObject,
   type MandateDto,
+  type NumericString,
   type OrganizationDto,
+  type OrganizationFinalizationReadModelDto,
   type OrganizationOverviewCountsDto,
   type OrganizationOverviewDto,
   type OrganizationPoliciesDto,
@@ -22,9 +25,16 @@ import {
   type RouteBlockedReasonDto,
   type RouteBodyRequirementDto,
   type RouteBodyVetoDto,
+  type TransactionHash,
+  ORGANIZATION_FINALIZATION_STATUSES,
+  ORGANIZATION_LIFECYCLE_STATUSES,
+  OrganizationStatus,
+  POST_FINALIZATION_BLOCKED_BOOTSTRAP_ADMIN_OPERATIONS,
 } from '@isonia/types';
 import { asStringArray } from '../chain/json';
+import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
+import { getEvmContractsCompatibility } from '../system/evm-contract-version';
 
 interface ProposalRouteRow {
   readonly chain_id: string;
@@ -109,9 +119,22 @@ interface BodyNameRow {
   readonly name: string;
 }
 
+interface OrganizationFinalizationRow {
+  readonly orgId: string;
+  readonly organizationStatus: OrganizationStatus;
+  readonly storedFinalizationStatus: string;
+  readonly finalizedBy: Address | null;
+  readonly finalizedBlock: NumericString | null;
+  readonly finalizedTxHash: TransactionHash | null;
+  readonly finalizedAt: string | null;
+}
+
 @Injectable()
 export class ReadModelsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly config: AppConfigService,
+  ) {}
 
   async getOrganizations(): Promise<OrganizationDto[]> {
     const result = await this.db.query(
@@ -138,6 +161,73 @@ export class ReadModelsService {
       [orgId],
     );
     return normalizeRows<OrganizationDto>(result.rows)[0];
+  }
+
+  async getOrganizationFinalization(
+    orgId: string,
+  ): Promise<OrganizationFinalizationReadModelDto | undefined> {
+    const result = await this.db.query<OrganizationFinalizationRow>(
+      `
+        select org_id as "orgId", status as "organizationStatus",
+               finalization_status as "storedFinalizationStatus",
+               finalized_admin_address as "finalizedBy",
+               finalized_block as "finalizedBlock",
+               finalized_tx_hash as "finalizedTxHash",
+               finalized_at_chain as "finalizedAt"
+        from organizations
+        where org_id = $1
+      `,
+      [orgId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return undefined;
+    }
+
+    const organizationStatus = String(
+      row.organizationStatus,
+    ) as OrganizationStatus;
+    const finalizationStatus = this.resolveFinalizationStatus(
+      String(row.storedFinalizationStatus),
+    );
+    const finalized =
+      finalizationStatus === ORGANIZATION_FINALIZATION_STATUSES.Finalized
+        ? true
+        : finalizationStatus === ORGANIZATION_FINALIZATION_STATUSES.NotFinalized
+          ? false
+          : null;
+    const finalizationSupported =
+      finalizationStatus !== ORGANIZATION_FINALIZATION_STATUSES.Unsupported &&
+      finalizationStatus !== ORGANIZATION_FINALIZATION_STATUSES.Unknown;
+    const bootstrapAdminMutationsAllowed =
+      finalized === null ? null : !finalized;
+
+    return {
+      orgId: row.orgId,
+      organizationStatus,
+      lifecycleStatus: lifecycleStatus(organizationStatus, finalizationStatus),
+      finalizationStatus,
+      finalized,
+      bootstrapAdminMutationsAllowed,
+      blockedBootstrapAdminOperations: finalized
+        ? POST_FINALIZATION_BLOCKED_BOOTSTRAP_ADMIN_OPERATIONS
+        : [],
+      derived: {
+        activeAndFinalized:
+          organizationStatus === OrganizationStatus.Active &&
+          finalizationStatus === ORGANIZATION_FINALIZATION_STATUSES.Finalized,
+        activeNotFinalized:
+          organizationStatus === OrganizationStatus.Active &&
+          finalizationStatus ===
+            ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
+        finalizationKnown: finalized !== null,
+        finalizationSupported,
+      },
+      ...(row.finalizedBy ? { finalizedBy: row.finalizedBy } : {}),
+      ...(row.finalizedBlock ? { finalizedBlock: row.finalizedBlock } : {}),
+      ...(row.finalizedAt ? { finalizedAt: row.finalizedAt } : {}),
+      ...(row.finalizedTxHash ? { finalizedTxHash: row.finalizedTxHash } : {}),
+    };
   }
 
   async getOverview(
@@ -597,6 +687,46 @@ export class ReadModelsService {
       result.rows.map((row) => [`${row.body_id}:${row.decision_type}`, row]),
     );
   }
+
+  private resolveFinalizationStatus(
+    storedStatus: string,
+  ): OrganizationFinalizationReadModelDto['finalizationStatus'] {
+    const compatibility = getEvmContractsCompatibility(
+      this.config.evmContractsVersion,
+    );
+    if (!compatibility) {
+      return ORGANIZATION_FINALIZATION_STATUSES.Unknown;
+    }
+    if (!compatibility.organizationFinalization) {
+      return ORGANIZATION_FINALIZATION_STATUSES.Unsupported;
+    }
+    if (storedStatus === ORGANIZATION_FINALIZATION_STATUSES.Finalized) {
+      return ORGANIZATION_FINALIZATION_STATUSES.Finalized;
+    }
+    if (storedStatus === ORGANIZATION_FINALIZATION_STATUSES.NotFinalized) {
+      return ORGANIZATION_FINALIZATION_STATUSES.NotFinalized;
+    }
+    return ORGANIZATION_FINALIZATION_STATUSES.Unknown;
+  }
+}
+
+function lifecycleStatus(
+  organizationStatus: OrganizationStatus,
+  finalizationStatus: OrganizationFinalizationReadModelDto['finalizationStatus'],
+): OrganizationFinalizationReadModelDto['lifecycleStatus'] {
+  if (finalizationStatus === ORGANIZATION_FINALIZATION_STATUSES.Unsupported) {
+    return ORGANIZATION_LIFECYCLE_STATUSES.Unsupported;
+  }
+  if (finalizationStatus === ORGANIZATION_FINALIZATION_STATUSES.Unknown) {
+    return ORGANIZATION_LIFECYCLE_STATUSES.Unknown;
+  }
+  if (finalizationStatus === ORGANIZATION_FINALIZATION_STATUSES.Finalized) {
+    return ORGANIZATION_LIFECYCLE_STATUSES.Finalized;
+  }
+  if (organizationStatus === OrganizationStatus.Active) {
+    return ORGANIZATION_LIFECYCLE_STATUSES.ActiveNotFinalized;
+  }
+  return ORGANIZATION_LIFECYCLE_STATUSES.Unknown;
 }
 
 function reason(

@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import {
+  GovernanceEventName,
+  ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES,
+} from '@isonia/types';
 import type {
   Address,
   ChainId,
@@ -16,6 +20,7 @@ import { createPublicClient, http, type PublicClient } from 'viem';
 import { AppConfigService } from '../config/app-config.service';
 import { maskUrl } from '../config/safe-url';
 import { DatabaseService } from '../database/database.service';
+import { getEvmContractsCompatibility } from '../system/evm-contract-version';
 import { CONTROL_PLANE_API_VERSION } from '../system/version';
 import {
   RuntimeHeartbeatService,
@@ -96,6 +101,22 @@ export interface IndexerDiagnosticsDto {
   };
 }
 
+export interface ControlPlaneDiagnosticsDto extends DiagnosticsDto {
+  readonly protocol: {
+    readonly evmContractsVersion?: string;
+    readonly finalization: {
+      readonly eventName: typeof GovernanceEventName.OrganizationFinalized;
+      readonly eventDecodingSupported: true;
+      readonly status: string;
+      readonly rawEventCount: number;
+      readonly projectedEventCount: number;
+      readonly emergencyRecoverySupported: false;
+      readonly governanceControlledPostFinalizationMutationSupported: false;
+      readonly latestProjectionError?: DiagnosticsProjectionErrorDto;
+    };
+  };
+}
+
 @Injectable()
 export class DiagnosticsService {
   private readonly client: PublicClient;
@@ -110,7 +131,7 @@ export class DiagnosticsService {
     });
   }
 
-  async getDiagnostics(): Promise<DiagnosticsDto> {
+  async getDiagnostics(): Promise<ControlPlaneDiagnosticsDto> {
     const contracts = this.getConfiguredContracts();
     const latestChainBlock = await this.getLatestChainBlockOrUndefined();
     const latestSafeBlock =
@@ -118,13 +139,21 @@ export class DiagnosticsService {
         ? undefined
         : safeBlock(latestChainBlock, this.config.confirmations);
 
-    const [cursorRows, rawEventCounts, projectionSummary, latestError] =
-      await Promise.all([
-        this.getCursorRows(contracts),
-        this.getRawEventCounts(),
-        this.getProjectionSummary(),
-        this.getLatestProjectionError(),
-      ]);
+    const [
+      cursorRows,
+      rawEventCounts,
+      projectionSummary,
+      latestError,
+      finalizationEventCounts,
+      latestFinalizationError,
+    ] = await Promise.all([
+      this.getCursorRows(contracts),
+      this.getRawEventCounts(),
+      this.getProjectionSummary(),
+      this.getLatestProjectionError(),
+      this.getFinalizationEventCounts(),
+      this.getLatestProjectionError(GovernanceEventName.OrganizationFinalized),
+    ]);
 
     const lastScannedBlocks = this.toContractCursors(
       contracts,
@@ -157,6 +186,23 @@ export class DiagnosticsService {
       failedProjectionCount: projectionSummary.failedProjectionCount,
       ...(latestError ? { latestProjectionError: latestError } : {}),
       staleDataIndicators: indicators,
+      protocol: {
+        ...(this.config.evmContractsVersion
+          ? { evmContractsVersion: this.config.evmContractsVersion }
+          : {}),
+        finalization: {
+          eventName: GovernanceEventName.OrganizationFinalized,
+          eventDecodingSupported: true,
+          status: this.getFinalizationCapabilityStatus(),
+          rawEventCount: finalizationEventCounts.rawEventCount,
+          projectedEventCount: finalizationEventCounts.projectedEventCount,
+          emergencyRecoverySupported: false,
+          governanceControlledPostFinalizationMutationSupported: false,
+          ...(latestFinalizationError
+            ? { latestProjectionError: latestFinalizationError }
+            : {}),
+        },
+      },
       generatedAt: new Date().toISOString(),
     };
   }
@@ -308,9 +354,9 @@ export class DiagnosticsService {
     };
   }
 
-  private async getLatestProjectionError(): Promise<
-    DiagnosticsProjectionErrorDto | undefined
-  > {
+  private async getLatestProjectionError(
+    eventName?: GovernanceEventName,
+  ): Promise<DiagnosticsProjectionErrorDto | undefined> {
     const result = await this.db.query<ProjectionErrorRow>(
       `
         select
@@ -328,11 +374,12 @@ export class DiagnosticsService {
         where chain_id = $1
           and processed_at is null
           and status <> 'orphaned'
+          and ($2::text is null or event_name = $2)
           and (failed_at is not null or error is not null or status = 'failed')
         order by failed_at desc nulls last, updated_at desc
         limit 1
       `,
-      [this.config.chainId],
+      [this.config.chainId, eventName ?? null],
     );
     const row = result.rows[0];
     if (!row || !row.error) {
@@ -393,6 +440,42 @@ export class DiagnosticsService {
       logIndex: row.log_index,
       processedAt: formatTimestamp(row.processed_at),
     };
+  }
+
+  private async getFinalizationEventCounts(): Promise<{
+    rawEventCount: number;
+    projectedEventCount: number;
+  }> {
+    const result = await this.db.query<{
+      rawEventCount: number | string;
+      projectedEventCount: number | string;
+    }>(
+      `
+        select
+          count(*)::int as "rawEventCount",
+          count(*) filter (where processed_at is not null)::int as "projectedEventCount"
+        from raw_events
+        where chain_id = $1 and event_name = $2
+      `,
+      [this.config.chainId, GovernanceEventName.OrganizationFinalized],
+    );
+    const row = result.rows[0];
+    return {
+      rawEventCount: Number(row?.rawEventCount ?? 0),
+      projectedEventCount: Number(row?.projectedEventCount ?? 0),
+    };
+  }
+
+  private getFinalizationCapabilityStatus(): string {
+    const compatibility = getEvmContractsCompatibility(
+      this.config.evmContractsVersion,
+    );
+    if (!compatibility) {
+      return ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unknown;
+    }
+    return compatibility.organizationFinalization
+      ? ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported
+      : ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported;
   }
 
   private toContractCursors(

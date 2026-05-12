@@ -16,6 +16,7 @@ import {
   GovernanceEventName,
   GraphEdgeType,
   GraphNodeType,
+  ORGANIZATION_FINALIZATION_STATUSES,
   OrganizationStatus,
   ProposalStatus,
 } from '@isonia/types';
@@ -201,6 +202,8 @@ export class ProjectionService {
         return this.organizationUpdated(client, event);
       case GovernanceEventName.OrganizationStatusChanged:
         return this.organizationStatusChanged(client, event);
+      case GovernanceEventName.OrganizationFinalized:
+        return this.organizationFinalized(client, event);
       case GovernanceEventName.BodyCreated:
         return this.bodyCreated(client, event);
       case GovernanceEventName.BodyUpdated:
@@ -247,15 +250,19 @@ export class ProjectionService {
       `
         insert into organizations (
           chain_id, org_id, admin_address, slug, name, metadata_uri, status,
-          created_block, created_tx_hash, data_status
+          finalization_status, created_block, created_tx_hash, data_status
         )
-        values ($1, $2, lower($3), $4, $5, $6, $7, $8, $9, $10)
+        values ($1, $2, lower($3), $4, $5, $6, $7, $8, $9, $10, $11)
         on conflict (chain_id, org_id) do update set
           admin_address = excluded.admin_address,
           slug = excluded.slug,
           name = excluded.name,
           metadata_uri = excluded.metadata_uri,
           status = excluded.status,
+          finalization_status = case
+            when organizations.finalization_status = $12 then organizations.finalization_status
+            else excluded.finalization_status
+          end,
           data_status = excluded.data_status,
           updated_at = now()
       `,
@@ -267,9 +274,11 @@ export class ProjectionService {
         fallbackName('Organization', orgId, slug),
         metadataUri,
         OrganizationStatus.Active,
+        ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
         event.block_number,
         event.tx_hash,
         event.status,
+        ORGANIZATION_FINALIZATION_STATUSES.Finalized,
       ],
     );
   }
@@ -298,6 +307,33 @@ export class ProjectionService {
         event.chain_id,
         stringArg(event.args, 'orgId'),
         toOrganizationStatus(arg(event.args, 'status')),
+      ],
+    );
+  }
+
+  private async organizationFinalized(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
+    await client.query(
+      `
+        update organizations
+        set finalization_status = $3,
+            finalized_admin_address = lower($4),
+            finalized_block = $5,
+            finalized_tx_hash = $6,
+            finalized_at_chain = $7,
+            updated_at = now()
+        where chain_id = $1 and org_id = $2
+      `,
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        ORGANIZATION_FINALIZATION_STATUSES.Finalized,
+        arg(event.args, 'admin'),
+        event.block_number,
+        event.tx_hash,
+        event.block_timestamp,
       ],
     );
   }

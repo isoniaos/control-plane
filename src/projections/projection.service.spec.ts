@@ -1,6 +1,7 @@
 import {
   DataStatus,
   GovernanceEventName,
+  ORGANIZATION_FINALIZATION_STATUSES,
   ProposalStatus,
   ProposalType,
 } from '@isonia/types';
@@ -105,6 +106,29 @@ describe('ProjectionService', () => {
     ]);
   });
 
+  it('projects OrganizationFinalized without changing organization active status', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      organizationFinalizedEvent('1'),
+    ]);
+
+    await expect(service.processBatch(1)).resolves.toBe(1);
+
+    const organizationUpdate = findSqlCall(
+      clientQuery,
+      'update organizations set finalization_status',
+    );
+    expect(organizationUpdate[1]).toEqual([
+      '31337',
+      '1',
+      ORGANIZATION_FINALIZATION_STATUSES.Finalized,
+      '0x000000000000000000000000000000000000000a',
+      '12',
+      '0xtx1',
+      '102',
+    ]);
+    expect(normalizeSql(organizationUpdate[0])).not.toContain('set status');
+  });
+
   it('keeps duplicate projection attempts idempotent through org-scoped upserts', async () => {
     const { service, clientQuery } = createProjectionHarness([
       proposalCreatedEvent('1'),
@@ -199,6 +223,23 @@ function proposalStatusChangedEvent(id: string): TestRawEvent {
       proposalId: '42',
       previousStatus: ProposalStatus.Approved,
       newStatus: ProposalStatus.Queued,
+    },
+  };
+}
+
+function organizationFinalizedEvent(id: string): TestRawEvent {
+  return {
+    id,
+    chain_id: '31337',
+    block_number: '12',
+    tx_hash: `0xtx${id}`,
+    log_index: Number(id),
+    event_name: GovernanceEventName.OrganizationFinalized,
+    status: DataStatus.Confirmed,
+    block_timestamp: '102',
+    args: {
+      orgId: '1',
+      admin: '0x000000000000000000000000000000000000000a',
     },
   };
 }

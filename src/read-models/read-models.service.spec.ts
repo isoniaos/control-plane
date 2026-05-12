@@ -1,10 +1,15 @@
 import {
   DataStatus,
   DecisionType,
+  ORGANIZATION_FINALIZATION_STATUSES,
+  ORGANIZATION_LIFECYCLE_STATUSES,
+  OrganizationStatus,
+  POST_FINALIZATION_BLOCKED_BOOTSTRAP_ADMIN_OPERATIONS,
   ProposalStatus,
   ProposalType,
   RouteBlockedReasonCode,
 } from '@isonia/types';
+import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
 import { ReadModelsService } from './read-models.service';
 
@@ -224,6 +229,98 @@ describe('ReadModelsService', () => {
     expect(route?.execution.executable).toBe(true);
     expect(route?.execution.blockedReasons).toEqual([]);
   });
+
+  it('returns finalization read metadata for finalized active organizations', async () => {
+    const { service } = createFinalizationService(
+      {
+        orgId: '1',
+        organizationStatus: OrganizationStatus.Active,
+        storedFinalizationStatus: ORGANIZATION_FINALIZATION_STATUSES.Finalized,
+        finalizedBy: '0x000000000000000000000000000000000000000a',
+        finalizedBlock: '123',
+        finalizedTxHash: '0xtx',
+        finalizedAt: '1000',
+      },
+      'v0.7.0-alpha.3',
+    );
+
+    await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
+      orgId: '1',
+      organizationStatus: OrganizationStatus.Active,
+      lifecycleStatus: ORGANIZATION_LIFECYCLE_STATUSES.Finalized,
+      finalizationStatus: ORGANIZATION_FINALIZATION_STATUSES.Finalized,
+      finalized: true,
+      bootstrapAdminMutationsAllowed: false,
+      blockedBootstrapAdminOperations:
+        POST_FINALIZATION_BLOCKED_BOOTSTRAP_ADMIN_OPERATIONS,
+      derived: {
+        activeAndFinalized: true,
+        activeNotFinalized: false,
+        finalizationKnown: true,
+        finalizationSupported: true,
+      },
+      finalizedBy: '0x000000000000000000000000000000000000000a',
+      finalizedBlock: '123',
+      finalizedAt: '1000',
+      finalizedTxHash: '0xtx',
+    });
+  });
+
+  it('returns active-not-finalized metadata without blocking bootstrap admin mutations', async () => {
+    const { service } = createFinalizationService(
+      {
+        orgId: '1',
+        organizationStatus: OrganizationStatus.Active,
+        storedFinalizationStatus:
+          ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
+      },
+      'v0.7.0-alpha.2',
+    );
+
+    await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
+      orgId: '1',
+      organizationStatus: OrganizationStatus.Active,
+      lifecycleStatus: ORGANIZATION_LIFECYCLE_STATUSES.ActiveNotFinalized,
+      finalizationStatus: ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
+      finalized: false,
+      bootstrapAdminMutationsAllowed: true,
+      blockedBootstrapAdminOperations: [],
+      derived: {
+        activeAndFinalized: false,
+        activeNotFinalized: true,
+        finalizationKnown: true,
+        finalizationSupported: true,
+      },
+    });
+  });
+
+  it('does not claim finalization read-model support for older contracts', async () => {
+    const { service } = createFinalizationService(
+      {
+        orgId: '1',
+        organizationStatus: OrganizationStatus.Active,
+        storedFinalizationStatus:
+          ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
+      },
+      'v0.7.0-alpha.1',
+    );
+
+    await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
+      orgId: '1',
+      organizationStatus: OrganizationStatus.Active,
+      lifecycleStatus: ORGANIZATION_LIFECYCLE_STATUSES.Unsupported,
+      finalizationStatus: ORGANIZATION_FINALIZATION_STATUSES.Unsupported,
+      finalized: null,
+      bootstrapAdminMutationsAllowed: null,
+      blockedBootstrapAdminOperations: [],
+      derived: {
+        activeAndFinalized: false,
+        activeNotFinalized: false,
+        finalizationKnown: false,
+        finalizationSupported: false,
+      },
+    });
+  });
 });
 
 function createRouteService(fixture: RouteFixture): {
@@ -260,7 +357,10 @@ function createRouteService(fixture: RouteFixture): {
     return Promise.resolve({ rows: [] });
   });
   const db = { query } as unknown as DatabaseService;
-  return { service: new ReadModelsService(db), query };
+  const config = {
+    evmContractsVersion: 'v0.7.0-alpha.3',
+  } as unknown as AppConfigService;
+  return { service: new ReadModelsService(db, config), query };
 }
 
 function createPolicyListService(rows: readonly Record<string, unknown>[]): {
@@ -273,7 +373,29 @@ function createPolicyListService(rows: readonly Record<string, unknown>[]): {
     }),
   );
   const db = { query } as unknown as DatabaseService;
-  return { service: new ReadModelsService(db), query };
+  const config = {
+    evmContractsVersion: 'v0.7.0-alpha.3',
+  } as unknown as AppConfigService;
+  return { service: new ReadModelsService(db, config), query };
+}
+
+function createFinalizationService(
+  row: Record<string, unknown> | undefined,
+  evmContractsVersion: string | undefined,
+): {
+  service: ReadModelsService;
+  query: QueryMock;
+} {
+  const query: QueryMock = jest.fn((sql: string, params?: unknown[]) => {
+    void sql;
+    void params;
+    return Promise.resolve({
+      rows: row ? [row] : [],
+    });
+  });
+  const db = { query } as unknown as DatabaseService;
+  const config = { evmContractsVersion } as unknown as AppConfigService;
+  return { service: new ReadModelsService(db, config), query };
 }
 
 function currentPolicy(

@@ -49,6 +49,11 @@ create table if not exists organizations (
   name text not null,
   metadata_uri text,
   status text not null,
+  finalization_status text not null default 'unknown',
+  finalized_admin_address text,
+  finalized_block bigint,
+  finalized_tx_hash text,
+  finalized_at_chain numeric,
   created_block bigint not null,
   created_tx_hash text not null,
   data_status text not null,
@@ -203,6 +208,12 @@ create index if not exists proposals_org_idx on proposals(chain_id, org_id, prop
 create index if not exists bodies_org_idx on bodies(chain_id, org_id);
 create index if not exists roles_org_idx on roles(chain_id, org_id);
 create index if not exists mandates_org_idx on mandates(chain_id, org_id);
+
+alter table organizations add column if not exists finalization_status text not null default 'unknown';
+alter table organizations add column if not exists finalized_admin_address text;
+alter table organizations add column if not exists finalized_block bigint;
+alter table organizations add column if not exists finalized_tx_hash text;
+alter table organizations add column if not exists finalized_at_chain numeric;
 
 alter table bodies drop constraint if exists bodies_pkey;
 alter table bodies add primary key (chain_id, org_id, body_id);

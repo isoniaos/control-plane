@@ -6,6 +6,15 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Indexed `OrganizationFinalized` and exposed organization finalization status/read metadata for downstream clients.
+
+### Changed
+
+- Updated the pinned `@isonia/types` dependency ref to `v0.7.0-alpha.2`.
+- Updated v0.7 contract-version capability handling for finalization-aware deployments while preserving activation batch support for compatible v0.7 tags.
+
 ## [0.7.0-alpha.1]
 
 ### Added

@@ -29,6 +29,14 @@ export const ISONIA_EVENT_ABI = [
   },
   {
     type: 'event',
+    name: 'OrganizationFinalized',
+    inputs: [
+      { name: 'orgId', type: 'uint64', indexed: true },
+      { name: 'admin', type: 'address', indexed: true },
+    ],
+  },
+  {
+    type: 'event',
     name: 'BodyCreated',
     inputs: [
       { name: 'orgId', type: 'uint64', indexed: true },

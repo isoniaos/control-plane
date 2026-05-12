@@ -125,7 +125,7 @@ This package consumes shared DTOs and enums through the pinned v0.7 compatibilit
 ```json
 {
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.7.0-alpha.1"
+    "@isonia/types": "github:isoniaos/types#v0.7.0-alpha.2"
   }
 }
 ```
@@ -140,9 +140,21 @@ Control Plane exposes activation capability metadata for v0.7 typed contract bat
 GET /v1/capabilities
 ```
 
-The response reports serial activation as the fallback path. Contract-level typed batch activation is reported as supported only when `EVM_CONTRACTS_VERSION` is configured for a v0.7-compatible contract deployment, currently `v0.7.0-alpha.1`. EIP-5792 remains optional/prototype wallet behavior and is not reported as the primary activation mode.
+The response reports serial activation as the fallback path. Contract-level typed batch activation is reported as supported when `EVM_CONTRACTS_VERSION` is configured for a compatible v0.7 deployment. `v0.7.0-alpha.1` supports typed contract batch activation; `v0.7.0-alpha.2` and `v0.7.0-alpha.3` carry that forward and additionally support bootstrap finalization. EIP-5792 remains optional/prototype wallet behavior and is not reported as the primary activation mode.
 
 Typed batch calls still emit granular domain events, so read-model recovery remains event-driven and equivalent to serial setup where the underlying contracts emit the existing per-item events.
+
+## v0.7 Bootstrap Finalization
+
+Control Plane indexes the `OrganizationFinalized` event from compatible v0.7 contracts and projects organization finalization metadata for downstream clients:
+
+```txt
+GET /v1/orgs/:orgId/finalization
+```
+
+The read model reports whether finalization is supported, unknown, not finalized, or finalized, plus finalized admin, transaction, block, and chain timestamp metadata when the event is available. Finalized organizations remain active and readable. Post-finalization bootstrap admin restrictions are enforced by the contracts, not Control Plane.
+
+Emergency/recovery flows and governance-controlled post-finalization mutations are not implemented in this alpha. This software remains unaudited alpha infrastructure and should not be used as production governance authority.
 
 ## Indexer Configuration
 
@@ -151,7 +163,7 @@ CHAIN_ID=31337
 RPC_URL=http://127.0.0.1:8545
 GOV_CORE_ADDRESS=0x...
 GOV_PROPOSALS_ADDRESS=0x...
-EVM_CONTRACTS_VERSION=v0.7.0-alpha.1
+EVM_CONTRACTS_VERSION=v0.7.0-alpha.3
 START_BLOCK=0
 CONFIRMATIONS=0
 BLOCK_RANGE_SIZE=1000
@@ -171,9 +183,12 @@ Diagnostics for operator support are available at:
 GET /v1/diagnostics
 GET /v1/diagnostics/indexer
 GET /v1/capabilities
+GET /v1/orgs/:orgId/finalization
 ```
 
 The diagnostics response includes API version, configured chain and contract addresses, latest observed and safe blocks when RPC is available, indexer cursors, raw event counts, projection backlog/failures, the latest projection error summary, and stale data indicators.
+
+Diagnostics also report whether `OrganizationFinalized` decoding is supported, the configured v0.7 contract compatibility status for finalization, finalization event counts, and whether a finalization event is the latest failed projection.
 
 `/v1/diagnostics/indexer` adds local runtime process heartbeats for the API, indexer, and projection worker so App Core and developers can tell whether workers are running, stale, or unknown.
 

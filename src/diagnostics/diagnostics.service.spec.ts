@@ -1,6 +1,10 @@
 import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
 import {
+  GovernanceEventName,
+  ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES,
+} from '@isonia/types';
+import {
   RuntimeHeartbeatService,
   type RuntimeProcessHeartbeatDto,
   type RuntimeProcessName,
@@ -92,6 +96,18 @@ describe('DiagnosticsService', () => {
         error: 'Missing event argument: orgId',
         failedAt: '2026-04-29T12:05:00.000Z',
         processingAttempts: 2,
+      },
+      protocol: {
+        evmContractsVersion: 'v0.7.0-alpha.3',
+        finalization: {
+          eventName: GovernanceEventName.OrganizationFinalized,
+          eventDecodingSupported: true,
+          status: ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported,
+          rawEventCount: 2,
+          projectedEventCount: 1,
+          emergencyRecoverySupported: false,
+          governanceControlledPostFinalizationMutationSupported: false,
+        },
       },
       staleDataIndicators: [
         {
@@ -244,7 +260,7 @@ function createService(): {
   runtimeHeartbeats: RuntimeHeartbeatService;
   getProcesses: GetProcessesMock;
 } {
-  const query: QueryMock = jest.fn((sql: string) => {
+  const query: QueryMock = jest.fn((sql: string, values?: unknown[]) => {
     const normalized = normalizeSql(sql);
     if (normalized.includes('select block_number, tx_hash, log_index')) {
       return Promise.resolve({
@@ -284,7 +300,15 @@ function createService(): {
         rows: [{ projectionBacklog: 2, failedProjectionCount: 1 }],
       });
     }
+    if (normalized.includes('raweventcount')) {
+      return Promise.resolve({
+        rows: [{ rawEventCount: 2, projectedEventCount: 1 }],
+      });
+    }
     if (normalized.includes('order by failed_at')) {
+      if (values?.[1] === GovernanceEventName.OrganizationFinalized) {
+        return Promise.resolve({ rows: [] });
+      }
       return Promise.resolve({
         rows: [
           {
@@ -320,6 +344,7 @@ function createService(): {
       govCoreAddress: '0x0000000000000000000000000000000000000001',
       govProposalsAddress: '0x0000000000000000000000000000000000000002',
     },
+    evmContractsVersion: 'v0.7.0-alpha.3',
   } as unknown as AppConfigService;
   const getProcesses: GetProcessesMock = jest.fn(
     (processNames: readonly RuntimeProcessName[]) => {
