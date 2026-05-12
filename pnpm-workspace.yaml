@@ -3,3 +3,5 @@ packages:
 
 onlyBuiltDependencies:
   - '@isonia/types'
+  - '@nestjs/core'
+  - '@swc/core'
