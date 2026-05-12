@@ -35,6 +35,9 @@ export class AppConfigService {
     'http://127.0.0.1:5173',
   ]);
   readonly corsCredentials = this.readBoolean('CORS_CREDENTIALS', false);
+  readonly evmContractsVersion = this.readOptionalString(
+    'EVM_CONTRACTS_VERSION',
+  );
 
   readonly contracts: ContractConfig = {
     govCoreAddress: this.readAddress('GOV_CORE_ADDRESS'),
@@ -57,6 +60,11 @@ export class AppConfigService {
       return fallback;
     }
     throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  private readOptionalString(name: string): string | undefined {
+    const value = process.env[name]?.trim();
+    return value ? value : undefined;
   }
 
   private readNumber(name: string, fallback?: number): number {

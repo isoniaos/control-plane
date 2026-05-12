@@ -22,4 +22,25 @@ describe('SystemController (e2e)', () => {
       .expect(200)
       .expect({ status: 'ok' });
   });
+
+  it('/v1/capabilities (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/v1/capabilities')
+      .expect(200)
+      .expect((response) => {
+        expect(response.body).toMatchObject({
+          apiVersion: 'v1',
+          chainId: 31337,
+          activation: {
+            availableModes: ['serial'],
+            flags: {
+              serial: true,
+              contractBatch: false,
+              walletBatchEip5792: false,
+            },
+          },
+        });
+        expect(JSON.stringify(response.body)).not.toContain('postgres://');
+      });
+  });
 });

@@ -7,6 +7,7 @@ describe('AppConfigService', () => {
     process.env = { ...originalEnv };
     delete process.env.GOV_CORE_ADDRESS;
     delete process.env.GOV_PROPOSALS_ADDRESS;
+    delete process.env.EVM_CONTRACTS_VERSION;
   });
 
   afterEach(() => {
@@ -38,5 +39,13 @@ describe('AppConfigService', () => {
     expect(() => new AppConfigService()).toThrow(
       'Invalid address environment variable: GOV_CORE_ADDRESS',
     );
+  });
+
+  it('treats blank EVM contracts version as unknown capability metadata', () => {
+    process.env.EVM_CONTRACTS_VERSION = '';
+
+    const config = new AppConfigService();
+
+    expect(config.evmContractsVersion).toBeUndefined();
   });
 });

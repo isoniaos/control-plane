@@ -6,6 +6,14 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added `GET /v1/capabilities` with activation capability metadata for v0.7 typed contract batch activation, including serial fallback and non-primary EIP-5792 reporting.
+
+### Changed
+
+- Updated the pinned `@isonia/types` dependency ref to `v0.7.0-alpha.1`.
+
 ## [0.6.0-alpha.2]
 
 ### Added

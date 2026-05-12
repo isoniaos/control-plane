@@ -120,17 +120,29 @@ Use `test:e2e` when REST behavior changes.
 
 ## Shared Package Dependency
 
-This package consumes shared DTOs and enums through the pinned known-good v0.5 compatibility tag:
+This package consumes shared DTOs and enums through the pinned v0.7 compatibility tag:
 
 ```json
 {
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.5.0-alpha.5"
+    "@isonia/types": "github:isoniaos/types#v0.7.0-alpha.1"
   }
 }
 ```
 
 Do not duplicate shared DTOs locally. Add shared domain types to `@isonia/types` first.
+
+## v0.7 Activation Capabilities
+
+Control Plane exposes activation capability metadata for v0.7 typed contract batch activation:
+
+```txt
+GET /v1/capabilities
+```
+
+The response reports serial activation as the fallback path. Contract-level typed batch activation is reported as supported only when `EVM_CONTRACTS_VERSION` is configured for a v0.7-compatible contract deployment, currently `v0.7.0-alpha.1`. EIP-5792 remains optional/prototype wallet behavior and is not reported as the primary activation mode.
+
+Typed batch calls still emit granular domain events, so read-model recovery remains event-driven and equivalent to serial setup where the underlying contracts emit the existing per-item events.
 
 ## Indexer Configuration
 
@@ -139,6 +151,7 @@ CHAIN_ID=31337
 RPC_URL=http://127.0.0.1:8545
 GOV_CORE_ADDRESS=0x...
 GOV_PROPOSALS_ADDRESS=0x...
+EVM_CONTRACTS_VERSION=v0.7.0-alpha.1
 START_BLOCK=0
 CONFIRMATIONS=0
 BLOCK_RANGE_SIZE=1000
@@ -157,6 +170,7 @@ Diagnostics for operator support are available at:
 ```txt
 GET /v1/diagnostics
 GET /v1/diagnostics/indexer
+GET /v1/capabilities
 ```
 
 The diagnostics response includes API version, configured chain and contract addresses, latest observed and safe blocks when RPC is available, indexer cursors, raw event counts, projection backlog/failures, the latest projection error summary, and stale data indicators.
