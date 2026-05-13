@@ -76,7 +76,7 @@ describe('IndexerService', () => {
     }
     const insertSql = String(firstCall[0]).replace(/\s+/g, ' ').toLowerCase();
     expect(insertSql).toContain(
-      'on conflict (chain_id, tx_hash, log_index) do nothing',
+      'on conflict (chain_id, contract_address, tx_hash, log_index) do nothing',
     );
     expect(query).toHaveBeenCalledWith(
       expect.any(String),

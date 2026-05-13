@@ -1,4 +1,5 @@
 import {
+  BodyKind,
   DataStatus,
   GovernanceEventName,
   ORGANIZATION_FINALIZATION_STATUSES,
@@ -149,6 +150,31 @@ describe('ProjectionService', () => {
       ),
     ).toBe(true);
   });
+
+  it('projects every BodyCreated event emitted by one batch transaction', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      bodyCreatedEvent('1', '1', 4),
+      bodyCreatedEvent('2', '2', 5),
+      bodyCreatedEvent('3', '3', 6),
+    ]);
+
+    await expect(service.processBatch(3)).resolves.toBe(3);
+
+    const bodyInserts = clientQuery.mock.calls.filter(([sql]) =>
+      normalizeSql(sql).includes('insert into bodies'),
+    );
+    expect(bodyInserts).toHaveLength(3);
+    expect(bodyInserts.map(([, values]) => values?.[1])).toEqual([
+      '1',
+      '2',
+      '3',
+    ]);
+    expect(
+      bodyInserts.every(
+        ([, values]) => values?.[3] === BodyKind.GeneralCouncil,
+      ),
+    ).toBe(true);
+  });
 });
 
 function createProjectionHarness(events: TestRawEvent[]): ProjectionHarness {
@@ -240,6 +266,29 @@ function organizationFinalizedEvent(id: string): TestRawEvent {
     args: {
       orgId: '1',
       admin: '0x000000000000000000000000000000000000000a',
+    },
+  };
+}
+
+function bodyCreatedEvent(
+  id: string,
+  bodyId: string,
+  logIndex: number,
+): TestRawEvent {
+  return {
+    id,
+    chain_id: '31337',
+    block_number: '13',
+    tx_hash: '0xbatchbodies',
+    log_index: logIndex,
+    event_name: GovernanceEventName.BodyCreated,
+    status: DataStatus.Confirmed,
+    block_timestamp: '103',
+    args: {
+      orgId: '1',
+      bodyId,
+      kind: BodyKind.GeneralCouncil,
+      metadataUri: '',
     },
   };
 }

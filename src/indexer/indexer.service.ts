@@ -174,7 +174,7 @@ export class IndexerService {
           confirmed_at
         )
         values ($1, lower($2), $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, 'confirmed', $11, now())
-        on conflict (chain_id, tx_hash, log_index) do nothing
+        on conflict (chain_id, contract_address, tx_hash, log_index) do nothing
       `,
       [
         this.config.chainId,

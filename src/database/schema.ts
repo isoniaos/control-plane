@@ -21,7 +21,7 @@ create table if not exists raw_events (
   processing_attempts integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique(chain_id, tx_hash, log_index)
+  constraint raw_events_identity_key unique(chain_id, contract_address, tx_hash, log_index)
 );
 
 create table if not exists chain_cursors (
@@ -214,6 +214,10 @@ alter table organizations add column if not exists finalized_admin_address text;
 alter table organizations add column if not exists finalized_block bigint;
 alter table organizations add column if not exists finalized_tx_hash text;
 alter table organizations add column if not exists finalized_at_chain numeric;
+
+alter table raw_events drop constraint if exists raw_events_chain_id_tx_hash_log_index_key;
+alter table raw_events drop constraint if exists raw_events_identity_key;
+alter table raw_events add constraint raw_events_identity_key unique(chain_id, contract_address, tx_hash, log_index);
 
 alter table bodies drop constraint if exists bodies_pkey;
 alter table bodies add primary key (chain_id, org_id, body_id);

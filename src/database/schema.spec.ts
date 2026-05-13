@@ -22,6 +22,18 @@ describe('CONTROL_PLANE_SCHEMA_SQL', () => {
     );
   });
 
+  it('uses contract-scoped raw event identity', () => {
+    expect(sql).toContain(
+      'constraint raw_events_identity_key unique(chain_id, contract_address, tx_hash, log_index)',
+    );
+    expect(sql).toContain(
+      'alter table raw_events add constraint raw_events_identity_key unique(chain_id, contract_address, tx_hash, log_index)',
+    );
+    expect(sql).toContain(
+      'alter table raw_events drop constraint if exists raw_events_chain_id_tx_hash_log_index_key',
+    );
+  });
+
   it('stores runtime heartbeats by chain and process', () => {
     expect(sql).toContain('create table if not exists runtime_heartbeats');
     expect(sql).toContain('primary key(chain_id, process_name)');
