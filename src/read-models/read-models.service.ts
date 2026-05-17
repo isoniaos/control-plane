@@ -1,9 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import {
+  AccountabilityExecutionStatus,
+  type AccountabilityRecordDto,
   type Address,
+  ArchiveProposalDisplayState,
+  type ArchiveProposalSummaryDto,
   type BodyDto,
+  type DecisionRecordDto,
+  DecisionRecordResult,
+  type ExternalResourceDto,
+  type ExternalResourceRefDto,
+  ExternalAuthorityClaim,
+  ExternalSourceLabel,
+  ExternalTrustBoundary,
   DecisionType,
+  ExternalResourceProvider,
+  ExternalResourceRelation,
   type GovernanceGraphDto,
+  GovernanceRecordSourceCategory,
   GraphEdgeType,
   GraphNodeType,
   type JsonObject,
@@ -15,16 +29,20 @@ import {
   type OrganizationOverviewDto,
   type OrganizationPoliciesDto,
   type OrganizationPolicyDto,
+  ObservedTransactionStatus,
   type ProposalDto,
   type ProposalRouteExplanationDto,
   type ProposalSummaryDto,
   ProposalStatus,
   type ProposalType,
+  type PublicOrganizationArchiveCountsDto,
+  type PublicOrganizationArchiveDto,
   type RoleDto,
   RouteBlockedReasonCode,
   type RouteBlockedReasonDto,
   type RouteBodyRequirementDto,
   type RouteBodyVetoDto,
+  type SourceDisclosureDto,
   type TransactionHash,
   ORGANIZATION_FINALIZATION_STATUSES,
   ORGANIZATION_LIFECYCLE_STATUSES,
@@ -34,7 +52,10 @@ import {
 import { asStringArray } from '../chain/json';
 import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
-import { getEvmContractsCompatibility } from '../system/evm-contract-version';
+import {
+  resolveOrganizationFinalizationCapability,
+  toOrganizationFinalizationCapabilityStatus,
+} from '../system/deployment-capabilities';
 
 interface ProposalRouteRow {
   readonly chain_id: string;
@@ -45,6 +66,87 @@ interface ProposalRouteRow {
   readonly status: ProposalStatus;
   readonly queued_at_chain: string | null;
   readonly executable_at_chain: string | null;
+}
+
+interface ArchiveProposalRow {
+  readonly chainId: number;
+  readonly orgId: string;
+  readonly proposalId: string;
+  readonly proposalType: ProposalType;
+  readonly policyVersion: string;
+  readonly title: string;
+  readonly status: ProposalStatus;
+  readonly createdAtChain: string;
+  readonly queuedAtChain: string | null;
+  readonly executedAtChain: string | null;
+  readonly updatedAt: Date | string | null;
+  readonly accountabilityId: string | null;
+  readonly executionStatus: string | null;
+  readonly responsiblePartyLabel: string | null;
+  readonly dueDate: string | null;
+  readonly linkedTxHash: string | null;
+  readonly manualUpdateCount: number;
+  readonly externalSourceCount: number;
+}
+
+interface AccountabilityRecordRow {
+  readonly chainId: number;
+  readonly orgId: string;
+  readonly proposalId: string;
+  readonly id: string;
+  readonly decisionRecordId: string | null;
+  readonly responsiblePartyLabel: string | null;
+  readonly responsiblePartyWallet: Address | null;
+  readonly responsiblePartyExternalIdentityUrl: string | null;
+  readonly dueDate: string | null;
+  readonly executionStatus: AccountabilityExecutionStatus;
+  readonly linkedTxHash: TransactionHash | null;
+  readonly linkedChainId: number | null;
+  readonly linkedExplorerUrl: string | null;
+  readonly linkedTxObservedStatus: ObservedTransactionStatus | null;
+  readonly failureOrCancellationReason: string | null;
+  readonly manualUpdates: unknown;
+  readonly completionConfirmation: unknown;
+  readonly sourceDisclosure: SourceDisclosureDto | null;
+}
+
+interface ExternalResourceRow {
+  readonly id: string;
+  readonly orgId: string;
+  readonly proposalId: string | null;
+  readonly decisionRecordId: string | null;
+  readonly accountabilityRecordId: string | null;
+  readonly provider: ExternalResourceProvider;
+  readonly relation: ExternalResourceRelation;
+  readonly url: string;
+  readonly canonicalRef: string | null;
+  readonly title: string | null;
+  readonly sourceLabel: ExternalSourceLabel;
+  readonly trustBoundary: ExternalTrustBoundary;
+  readonly authorityClaim: ExternalAuthorityClaim;
+  readonly importStatus: string | null;
+  readonly observedAt: Date | string | null;
+  readonly importedAt: Date | string | null;
+  readonly importedBy: string | null;
+  readonly verificationMethod: string | null;
+  readonly sourceDisclosure: SourceDisclosureDto | null;
+  readonly rawMetadataPreview: JsonObject | null;
+}
+
+interface DecisionProposalRow {
+  readonly chain_id: string;
+  readonly org_id: string;
+  readonly proposal_id: string;
+  readonly proposal_type: ProposalType;
+  readonly policy_version: string;
+  readonly title: string;
+  readonly target_address: Address | null;
+  readonly value: string;
+  readonly status: ProposalStatus;
+  readonly created_at_chain: string;
+  readonly queued_at_chain: string | null;
+  readonly executed_at_chain: string | null;
+  readonly updated_at: Date | string | null;
 }
 
 interface PolicyRuleRow {
@@ -70,7 +172,7 @@ interface CurrentPolicyRuleRow {
 
 interface ProposalDecisionRow {
   readonly body_id: string;
-  readonly decision_type: string;
+  readonly decision_type: DecisionType;
   readonly actor_address: string;
   readonly tx_hash: string;
   readonly decided_at_chain: string;
@@ -261,6 +363,84 @@ export class ReadModelsService {
       counts: normalizeRow<OrganizationOverviewCountsDto>(counts.rows[0] ?? {}),
       latestProposals,
     };
+  }
+
+  async getPublicArchive(
+    orgId: string,
+  ): Promise<PublicOrganizationArchiveDto | undefined> {
+    const organization = await this.getOrganization(orgId);
+    if (!organization) {
+      return undefined;
+    }
+
+    const rows = await this.getArchiveProposalRows(orgId);
+    const proposals = rows.map((row) => this.toArchiveProposalSummary(row));
+    const counts = this.toArchiveCounts(rows);
+
+    return {
+      organization,
+      counts,
+      proposals,
+      readModelStatus: derivedSourceDisclosure(
+        'Archive summaries are derived from Control Plane read models. Control Plane does not invent governance authority.',
+      ),
+    };
+  }
+
+  async getDecisionRecords(orgId: string): Promise<DecisionRecordDto[]> {
+    const result = await this.db.query<DecisionProposalRow>(
+      `
+        select chain_id, org_id, proposal_id, proposal_type, policy_version, title,
+               target_address, value, status, created_at_chain, queued_at_chain,
+               executed_at_chain, updated_at
+        from proposals
+        where chain_id = $1 and org_id = $2
+        order by proposal_id desc
+      `,
+      [this.config.chainId, orgId],
+    );
+
+    return Promise.all(
+      result.rows.map((proposal) => this.toDecisionRecord(proposal)),
+    );
+  }
+
+  async getDecisionRecord(
+    orgId: string,
+    proposalId: string,
+  ): Promise<DecisionRecordDto | undefined> {
+    const proposal = await this.getDecisionProposal(orgId, proposalId);
+    if (!proposal) {
+      return undefined;
+    }
+    return this.toDecisionRecord(proposal);
+  }
+
+  async getAccountabilityRecord(
+    orgId: string,
+    proposalId: string,
+  ): Promise<AccountabilityRecordDto | undefined> {
+    const proposal = await this.getDecisionProposal(orgId, proposalId);
+    if (!proposal) {
+      return undefined;
+    }
+    const record = await this.getStoredAccountabilityRecord(orgId, proposalId);
+    if (record) {
+      return record;
+    }
+
+    return this.deriveAccountabilityRecord(proposal);
+  }
+
+  async getExternalResources(
+    orgId: string,
+    proposalId: string,
+  ): Promise<ExternalResourceDto[] | undefined> {
+    const proposal = await this.getDecisionProposal(orgId, proposalId);
+    if (!proposal) {
+      return undefined;
+    }
+    return this.getExternalResourcesForProposal(orgId, proposalId);
   }
 
   async getBodies(orgId: string): Promise<BodyDto[]> {
@@ -670,6 +850,427 @@ export class ReadModelsService {
     );
   }
 
+  private async getArchiveProposalRows(
+    orgId: string,
+  ): Promise<ArchiveProposalRow[]> {
+    const result = await this.db.query<ArchiveProposalRow>(
+      `
+        select
+          p.chain_id::int as "chainId",
+          p.org_id as "orgId",
+          p.proposal_id as "proposalId",
+          p.proposal_type as "proposalType",
+          p.policy_version as "policyVersion",
+          p.title,
+          p.status,
+          p.created_at_chain as "createdAtChain",
+          p.queued_at_chain as "queuedAtChain",
+          p.executed_at_chain as "executedAtChain",
+          p.updated_at as "updatedAt",
+          a.id as "accountabilityId",
+          a.execution_status as "executionStatus",
+          a.responsible_party_label as "responsiblePartyLabel",
+          a.due_date as "dueDate",
+          a.linked_tx_hash as "linkedTxHash",
+          coalesce(jsonb_array_length(coalesce(a.manual_updates, '[]'::jsonb)), 0)::int as "manualUpdateCount",
+          count(er.id)::int as "externalSourceCount"
+        from proposals p
+        left join accountability_records a
+          on a.chain_id = p.chain_id
+         and a.org_id = p.org_id
+         and a.proposal_id = p.proposal_id
+        left join external_resources er
+          on er.chain_id = p.chain_id
+         and er.org_id = p.org_id
+         and er.proposal_id = p.proposal_id
+        where p.chain_id = $1 and p.org_id = $2
+        group by
+          p.chain_id,
+          p.org_id,
+          p.proposal_id,
+          p.proposal_type,
+          p.policy_version,
+          p.title,
+          p.status,
+          p.created_at_chain,
+          p.queued_at_chain,
+          p.executed_at_chain,
+          p.updated_at,
+          a.id,
+          a.execution_status,
+          a.responsible_party_label,
+          a.due_date,
+          a.linked_tx_hash,
+          a.manual_updates
+        order by p.proposal_id desc
+      `,
+      [this.config.chainId, orgId],
+    );
+    return result.rows;
+  }
+
+  private async getDecisionProposal(
+    orgId: string,
+    proposalId: string,
+  ): Promise<DecisionProposalRow | undefined> {
+    const result = await this.db.query<DecisionProposalRow>(
+      `
+        select chain_id, org_id, proposal_id, proposal_type, policy_version, title,
+               target_address, value, status, created_at_chain, queued_at_chain,
+               executed_at_chain, updated_at
+        from proposals
+        where chain_id = $1 and org_id = $2 and proposal_id = $3
+      `,
+      [this.config.chainId, orgId, proposalId],
+    );
+    return result.rows[0];
+  }
+
+  private async getAccountabilityRecordRow(
+    orgId: string,
+    proposalId: string,
+  ): Promise<AccountabilityRecordRow | undefined> {
+    const result = await this.db.query<AccountabilityRecordRow>(
+      `
+        select
+          chain_id::int as "chainId",
+          org_id as "orgId",
+          proposal_id as "proposalId",
+          id,
+          decision_record_id as "decisionRecordId",
+          responsible_party_label as "responsiblePartyLabel",
+          responsible_party_wallet as "responsiblePartyWallet",
+          responsible_party_external_identity_url as "responsiblePartyExternalIdentityUrl",
+          due_date as "dueDate",
+          execution_status as "executionStatus",
+          linked_tx_hash as "linkedTxHash",
+          linked_chain_id::int as "linkedChainId",
+          linked_explorer_url as "linkedExplorerUrl",
+          linked_tx_observed_status as "linkedTxObservedStatus",
+          failure_or_cancellation_reason as "failureOrCancellationReason",
+          manual_updates as "manualUpdates",
+          completion_confirmation as "completionConfirmation",
+          source_disclosure as "sourceDisclosure"
+        from accountability_records
+        where chain_id = $1 and org_id = $2 and proposal_id = $3
+      `,
+      [this.config.chainId, orgId, proposalId],
+    );
+    return result.rows[0];
+  }
+
+  private async getStoredAccountabilityRecord(
+    orgId: string,
+    proposalId: string,
+  ): Promise<AccountabilityRecordDto | undefined> {
+    const row = await this.getAccountabilityRecordRow(orgId, proposalId);
+    if (!row) {
+      return undefined;
+    }
+    const externalProofs = await this.getExternalResourceRefs(
+      orgId,
+      proposalId,
+    );
+    return this.toAccountabilityRecord(row, externalProofs);
+  }
+
+  private async getExternalResourcesForProposal(
+    orgId: string,
+    proposalId: string,
+  ): Promise<ExternalResourceDto[]> {
+    const result = await this.db.query<ExternalResourceRow>(
+      `
+        select
+          id,
+          org_id as "orgId",
+          proposal_id as "proposalId",
+          decision_record_id as "decisionRecordId",
+          accountability_record_id as "accountabilityRecordId",
+          provider,
+          relation,
+          url,
+          canonical_ref as "canonicalRef",
+          title,
+          source_label as "sourceLabel",
+          trust_boundary as "trustBoundary",
+          authority_claim as "authorityClaim",
+          import_status as "importStatus",
+          observed_at as "observedAt",
+          imported_at as "importedAt",
+          imported_by as "importedBy",
+          verification_method as "verificationMethod",
+          source_disclosure as "sourceDisclosure",
+          raw_metadata_preview as "rawMetadataPreview"
+        from external_resources
+        where chain_id = $1 and org_id = $2 and proposal_id = $3
+        order by imported_at desc nulls last, observed_at desc nulls last, id asc
+      `,
+      [this.config.chainId, orgId, proposalId],
+    );
+    return result.rows.map((row) => toExternalResourceDto(row));
+  }
+
+  private async getExternalResourceRefs(
+    orgId: string,
+    proposalId: string,
+  ): Promise<ExternalResourceRefDto[]> {
+    const resources = await this.getExternalResourcesForProposal(
+      orgId,
+      proposalId,
+    );
+    return resources.map((resource) => ({
+      id: resource.id,
+      url: resource.url,
+      sourceLabel: resource.sourceLabel,
+      provider: resource.provider,
+      relation: resource.relation,
+      trustBoundary: resource.trustBoundary,
+      authorityClaim: resource.authorityClaim,
+    }));
+  }
+
+  private async toDecisionRecord(
+    proposal: DecisionProposalRow,
+  ): Promise<DecisionRecordDto> {
+    const [accountabilityRow, evidence, approvalSummary] = await Promise.all([
+      this.getAccountabilityRecordRow(proposal.org_id, proposal.proposal_id),
+      this.getExternalResourceRefs(proposal.org_id, proposal.proposal_id),
+      this.getDecisionApprovalSummary(proposal),
+    ]);
+    const accountability = accountabilityRow
+      ? this.toAccountabilityRecord(accountabilityRow, evidence)
+      : await this.deriveAccountabilityRecord(proposal);
+    const decisionResult = toDecisionResult(proposal.status);
+
+    return {
+      id: decisionRecordIdFor(
+        proposal.chain_id,
+        proposal.org_id,
+        proposal.proposal_id,
+      ),
+      orgId: proposal.org_id,
+      proposalId: proposal.proposal_id,
+      decisionResult,
+      approvalSummary,
+      requiresExecution: requiresExecution(proposal),
+      accountabilityRecordId: accountability.id,
+      responsiblePartyLabel: accountability.responsibleParty?.label,
+      dueDate: accountability.dueDate,
+      evidence,
+      finalOutcome: {
+        status: accountability.executionStatus,
+        reason: accountabilityRow?.failureOrCancellationReason ?? undefined,
+        recordedAt:
+          toIsoTimestamp(proposal.updated_at) ?? new Date(0).toISOString(),
+        sourceDisclosure:
+          accountability.sourceDisclosure ??
+          derivedSourceDisclosure(
+            'Final outcome is derived from the Control Plane read model.',
+          ),
+      },
+      timestamps: {
+        proposedAt: toIsoTimestamp(proposal.created_at_chain),
+        queuedAt: toIsoTimestamp(proposal.queued_at_chain),
+        executedAt: toIsoTimestamp(proposal.executed_at_chain),
+        archivedAt: toIsoTimestamp(proposal.updated_at),
+      },
+      sourceDisclosure: contractReadModelSourceDisclosure(
+        'Decision records are assembled from proposal, policy, decision, accountability, and evidence read models.',
+      ),
+    };
+  }
+
+  private async getDecisionApprovalSummary(
+    proposal: DecisionProposalRow,
+  ): Promise<DecisionRecordDto['approvalSummary']> {
+    const [policy, decisions] = await Promise.all([
+      this.db.query<PolicyRuleRow>(
+        `
+          select *
+          from policy_rules
+          where chain_id = $1 and org_id = $2 and proposal_type = $3 and version = $4
+        `,
+        [
+          proposal.chain_id,
+          proposal.org_id,
+          proposal.proposal_type,
+          proposal.policy_version,
+        ],
+      ),
+      this.db.query<ProposalDecisionRow>(
+        `
+          select body_id, decision_type, actor_address, tx_hash, decided_at_chain
+          from proposal_decisions
+          where chain_id = $1 and org_id = $2 and proposal_id = $3
+        `,
+        [proposal.chain_id, proposal.org_id, proposal.proposal_id],
+      ),
+    ]);
+    const policyRow = policy.rows[0];
+    const requiredApprovals = policyRow
+      ? asStringArray(policyRow.required_approval_bodies)
+      : [];
+    const collectedApprovals = decisions.rows
+      .filter((row) => row.decision_type === DecisionType.Approve)
+      .map((row) => row.body_id);
+    const vetoState = decisions.rows.some(
+      (row) => row.decision_type === DecisionType.Veto,
+    )
+      ? 'vetoed'
+      : policyRow
+        ? 'none'
+        : 'unknown';
+
+    return {
+      requiredApprovals,
+      collectedApprovals,
+      vetoState,
+      policyVersion: proposal.policy_version,
+    };
+  }
+
+  private toArchiveProposalSummary(
+    row: ArchiveProposalRow,
+  ): ArchiveProposalSummaryDto {
+    const executionStatus = normalizeExecutionStatus(row.executionStatus);
+    const linkedEvidenceCount = row.linkedTxHash ? 1 : 0;
+
+    return {
+      chainId: row.chainId,
+      orgId: row.orgId,
+      proposalId: row.proposalId,
+      title: row.title,
+      proposalType: row.proposalType,
+      contractStatus: row.status,
+      displayState: toArchiveDisplayState(row.status, executionStatus),
+      decisionResult: toDecisionResult(row.status),
+      executionStatus,
+      responsiblePartyLabel: row.responsiblePartyLabel ?? undefined,
+      dueDate: row.dueDate ?? undefined,
+      evidenceCount: row.externalSourceCount + linkedEvidenceCount,
+      externalSourceCount: row.externalSourceCount,
+      lastUpdatedAt: toIsoTimestamp(row.updatedAt),
+      sourceDisclosure: derivedSourceDisclosure(
+        'Archive proposal summary is derived from proposal, accountability, and external-resource read models.',
+      ),
+    };
+  }
+
+  private toArchiveCounts(
+    rows: readonly ArchiveProposalRow[],
+  ): PublicOrganizationArchiveCountsDto {
+    return {
+      activeProposals: rows.filter((row) =>
+        [ProposalStatus.Created, ProposalStatus.UnderReview].includes(
+          row.status,
+        ),
+      ).length,
+      approvedAwaitingExecution: rows.filter((row) =>
+        [ProposalStatus.Approved, ProposalStatus.Queued].includes(row.status),
+      ).length,
+      executedDecisions: rows.filter(
+        (row) =>
+          row.status === ProposalStatus.Executed ||
+          normalizeExecutionStatus(row.executionStatus) ===
+            AccountabilityExecutionStatus.Completed,
+      ).length,
+      failedOrCancelledFollowThrough: rows.filter(
+        (row) =>
+          [
+            AccountabilityExecutionStatus.Cancelled,
+            AccountabilityExecutionStatus.Failed,
+          ].includes(
+            normalizeExecutionStatus(row.executionStatus) ??
+              AccountabilityExecutionStatus.Unknown,
+          ) ||
+          [
+            ProposalStatus.Cancelled,
+            ProposalStatus.Expired,
+            ProposalStatus.Vetoed,
+          ].includes(row.status),
+      ).length,
+      proposalsWithMissingEvidence: rows.filter(
+        (row) =>
+          [
+            ProposalStatus.Approved,
+            ProposalStatus.Queued,
+            ProposalStatus.Executed,
+          ].includes(row.status) &&
+          row.externalSourceCount === 0 &&
+          !row.linkedTxHash,
+      ).length,
+      manualOnlyStatusRecords: rows.filter(
+        (row) => row.manualUpdateCount > 0 && !row.linkedTxHash,
+      ).length,
+    };
+  }
+
+  private toAccountabilityRecord(
+    row: AccountabilityRecordRow,
+    externalProofs: readonly ExternalResourceRefDto[],
+  ): AccountabilityRecordDto {
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      proposalId: row.proposalId,
+      decisionRecordId: row.decisionRecordId ?? undefined,
+      responsibleParty: responsibleParty(row),
+      dueDate: row.dueDate ?? undefined,
+      executionStatus: row.executionStatus,
+      linkedTransaction: row.linkedTxHash
+        ? {
+            chainId: row.linkedChainId ?? row.chainId,
+            txHash: row.linkedTxHash,
+            explorerUrl: row.linkedExplorerUrl ?? undefined,
+            observedStatus:
+              row.linkedTxObservedStatus ?? ObservedTransactionStatus.Unknown,
+            sourceDisclosure: contractReadModelSourceDisclosure(
+              'Linked transaction is an onchain observation from the Control Plane raw event stream.',
+              ExternalSourceLabel.OnchainTransaction,
+            ),
+          }
+        : undefined,
+      externalProofs,
+      manualUpdates: asJsonArray(row.manualUpdates),
+      completionConfirmation: asJsonObject<
+        NonNullable<AccountabilityRecordDto['completionConfirmation']>
+      >(row.completionConfirmation),
+      sourceDisclosure:
+        row.sourceDisclosure ??
+        contractReadModelSourceDisclosure(
+          'Accountability record is materialized from Control Plane read-model projection.',
+        ),
+    };
+  }
+
+  private async deriveAccountabilityRecord(
+    proposal: DecisionProposalRow,
+  ): Promise<AccountabilityRecordDto> {
+    return {
+      id: accountabilityRecordIdFor(
+        proposal.chain_id,
+        proposal.org_id,
+        proposal.proposal_id,
+      ),
+      orgId: proposal.org_id,
+      proposalId: proposal.proposal_id,
+      decisionRecordId: decisionRecordIdFor(
+        proposal.chain_id,
+        proposal.org_id,
+        proposal.proposal_id,
+      ),
+      executionStatus: deriveExecutionStatus(proposal.status),
+      externalProofs: await this.getExternalResourceRefs(
+        proposal.org_id,
+        proposal.proposal_id,
+      ),
+      manualUpdates: [],
+      sourceDisclosure: derivedSourceDisclosure(
+        'No explicit accountability row exists; this record is derived from proposal read-model state and is not a manual or external assertion.',
+      ),
+    };
+  }
+
   private async getDecisionMap(
     chainId: string,
     orgId: string,
@@ -691,13 +1292,13 @@ export class ReadModelsService {
   private resolveFinalizationStatus(
     storedStatus: string,
   ): OrganizationFinalizationReadModelDto['finalizationStatus'] {
-    const compatibility = getEvmContractsCompatibility(
-      this.config.evmContractsVersion,
+    const capabilityStatus = toOrganizationFinalizationCapabilityStatus(
+      resolveOrganizationFinalizationCapability(this.config),
     );
-    if (!compatibility) {
+    if (capabilityStatus === ORGANIZATION_FINALIZATION_STATUSES.Unknown) {
       return ORGANIZATION_FINALIZATION_STATUSES.Unknown;
     }
-    if (!compatibility.organizationFinalization) {
+    if (capabilityStatus === ORGANIZATION_FINALIZATION_STATUSES.Unsupported) {
       return ORGANIZATION_FINALIZATION_STATUSES.Unsupported;
     }
     if (storedStatus === ORGANIZATION_FINALIZATION_STATUSES.Finalized) {
@@ -735,6 +1336,212 @@ function reason(
   relatedBodyId?: string,
 ): RouteBlockedReasonDto {
   return relatedBodyId ? { code, message, relatedBodyId } : { code, message };
+}
+
+function accountabilityRecordIdFor(
+  chainId: string,
+  orgId: string,
+  proposalId: string,
+): string {
+  return `accountability:${chainId}:${orgId}:${proposalId}`;
+}
+
+function decisionRecordIdFor(
+  chainId: string,
+  orgId: string,
+  proposalId: string,
+): string {
+  return `decision:${chainId}:${orgId}:${proposalId}`;
+}
+
+function normalizeExecutionStatus(
+  value: string | null,
+): AccountabilityExecutionStatus | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (
+    Object.values(AccountabilityExecutionStatus).includes(
+      value as AccountabilityExecutionStatus,
+    )
+  ) {
+    return value as AccountabilityExecutionStatus;
+  }
+  return AccountabilityExecutionStatus.Unknown;
+}
+
+function deriveExecutionStatus(
+  proposalStatus: ProposalStatus,
+): AccountabilityExecutionStatus {
+  if (proposalStatus === ProposalStatus.Executed) {
+    return AccountabilityExecutionStatus.Completed;
+  }
+  if (proposalStatus === ProposalStatus.Cancelled) {
+    return AccountabilityExecutionStatus.Cancelled;
+  }
+  return AccountabilityExecutionStatus.Unknown;
+}
+
+function toArchiveDisplayState(
+  proposalStatus: ProposalStatus,
+  executionStatus: AccountabilityExecutionStatus | undefined,
+): ArchiveProposalDisplayState {
+  if (executionStatus === AccountabilityExecutionStatus.Completed) {
+    return ArchiveProposalDisplayState.Executed;
+  }
+  if (executionStatus === AccountabilityExecutionStatus.Failed) {
+    return ArchiveProposalDisplayState.ExecutionFailed;
+  }
+  if (executionStatus === AccountabilityExecutionStatus.Cancelled) {
+    return ArchiveProposalDisplayState.Cancelled;
+  }
+
+  switch (proposalStatus) {
+    case ProposalStatus.Created:
+    case ProposalStatus.UnderReview:
+      return ArchiveProposalDisplayState.Active;
+    case ProposalStatus.Approved:
+      return ArchiveProposalDisplayState.Approved;
+    case ProposalStatus.Queued:
+      return ArchiveProposalDisplayState.ExecutionPending;
+    case ProposalStatus.Executed:
+      return ArchiveProposalDisplayState.Executed;
+    case ProposalStatus.Cancelled:
+      return ArchiveProposalDisplayState.Cancelled;
+    case ProposalStatus.Vetoed:
+      return ArchiveProposalDisplayState.Rejected;
+    case ProposalStatus.Expired:
+      return ArchiveProposalDisplayState.Archived;
+    default:
+      return ArchiveProposalDisplayState.UnknownExternalState;
+  }
+}
+
+function toDecisionResult(
+  proposalStatus: ProposalStatus,
+): DecisionRecordResult {
+  switch (proposalStatus) {
+    case ProposalStatus.Approved:
+    case ProposalStatus.Queued:
+      return DecisionRecordResult.Approved;
+    case ProposalStatus.Executed:
+      return DecisionRecordResult.Executed;
+    case ProposalStatus.Cancelled:
+      return DecisionRecordResult.Cancelled;
+    case ProposalStatus.Vetoed:
+      return DecisionRecordResult.Rejected;
+    case ProposalStatus.Expired:
+      return DecisionRecordResult.Expired;
+    default:
+      return DecisionRecordResult.Unknown;
+  }
+}
+
+function requiresExecution(proposal: DecisionProposalRow): boolean {
+  return (
+    proposal.status === ProposalStatus.Approved ||
+    proposal.status === ProposalStatus.Queued ||
+    proposal.status === ProposalStatus.Executed ||
+    Boolean(proposal.target_address) ||
+    Number(proposal.value) > 0
+  );
+}
+
+function responsibleParty(
+  row: AccountabilityRecordRow,
+): AccountabilityRecordDto['responsibleParty'] {
+  if (
+    !row.responsiblePartyLabel &&
+    !row.responsiblePartyWallet &&
+    !row.responsiblePartyExternalIdentityUrl
+  ) {
+    return undefined;
+  }
+  return {
+    label: row.responsiblePartyLabel ?? 'Unspecified responsible party',
+    walletAddress: row.responsiblePartyWallet ?? undefined,
+    externalIdentityUrl: row.responsiblePartyExternalIdentityUrl ?? undefined,
+  };
+}
+
+function contractReadModelSourceDisclosure(
+  note: string,
+  sourceLabel = ExternalSourceLabel.ContractState,
+): SourceDisclosureDto {
+  return {
+    sourceCategory: GovernanceRecordSourceCategory.ContractReadModel,
+    sourceLabel,
+    trustBoundary: ExternalTrustBoundary.OnchainObservation,
+    authorityClaim: ExternalAuthorityClaim.ContractAuthoritative,
+    note,
+  };
+}
+
+function derivedSourceDisclosure(note: string): SourceDisclosureDto {
+  return {
+    sourceCategory: GovernanceRecordSourceCategory.DerivedDisplay,
+    sourceLabel: ExternalSourceLabel.ContractState,
+    trustBoundary: ExternalTrustBoundary.OnchainObservation,
+    authorityClaim: ExternalAuthorityClaim.None,
+    note,
+  };
+}
+
+function toExternalResourceDto(row: ExternalResourceRow): ExternalResourceDto {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    proposalId: row.proposalId ?? undefined,
+    decisionRecordId: row.decisionRecordId ?? undefined,
+    accountabilityRecordId: row.accountabilityRecordId ?? undefined,
+    provider: row.provider,
+    relation: row.relation,
+    url: row.url,
+    canonicalRef: row.canonicalRef ?? undefined,
+    title: row.title ?? undefined,
+    sourceLabel: row.sourceLabel,
+    trustBoundary: row.trustBoundary,
+    authorityClaim: row.authorityClaim,
+    importStatus:
+      (row.importStatus as ExternalResourceDto['importStatus']) ?? undefined,
+    observedAt: toIsoTimestamp(row.observedAt),
+    importedAt: toIsoTimestamp(row.importedAt),
+    importedBy: row.importedBy ?? undefined,
+    verificationMethod: row.verificationMethod ?? undefined,
+    sourceDisclosure: row.sourceDisclosure ?? undefined,
+    rawMetadataPreview: row.rawMetadataPreview ?? undefined,
+  };
+}
+
+function asJsonArray(value: unknown): AccountabilityRecordDto['manualUpdates'] {
+  if (Array.isArray(value)) {
+    return value as AccountabilityRecordDto['manualUpdates'];
+  }
+  return [];
+}
+
+function asJsonObject<T extends object>(value: unknown): T | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as T;
+  }
+  return undefined;
+}
+
+function toIsoTimestamp(
+  value: Date | string | null | undefined,
+): string | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return new Date(numeric * 1_000).toISOString();
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? value : new Date(parsed).toISOString();
 }
 
 function normalizeRows<T>(rows: readonly Record<string, unknown>[]): T[] {

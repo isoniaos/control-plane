@@ -1,6 +1,13 @@
 import {
+  AccountabilityExecutionStatus,
+  ArchiveProposalDisplayState,
   DataStatus,
   DecisionType,
+  ExternalAuthorityClaim,
+  ExternalSourceLabel,
+  ExternalTrustBoundary,
+  GovernanceRecordSourceCategory,
+  ObservedTransactionStatus,
   ORGANIZATION_FINALIZATION_STATUSES,
   ORGANIZATION_LIFECYCLE_STATUSES,
   OrganizationStatus,
@@ -241,7 +248,7 @@ describe('ReadModelsService', () => {
         finalizedTxHash: '0xtx',
         finalizedAt: '1000',
       },
-      'v0.7.0-alpha.3',
+      supportedFinalizationConfig(),
     );
 
     await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
@@ -274,7 +281,7 @@ describe('ReadModelsService', () => {
         storedFinalizationStatus:
           ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
       },
-      'v0.7.0-alpha.2',
+      supportedFinalizationConfig(),
     );
 
     await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
@@ -302,7 +309,11 @@ describe('ReadModelsService', () => {
         storedFinalizationStatus:
           ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
       },
-      'v0.7.0-alpha.1',
+      {
+        deploymentCapabilities: {
+          organizationFinalization: 'unsupported',
+        },
+      },
     );
 
     await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
@@ -320,6 +331,112 @@ describe('ReadModelsService', () => {
         finalizationSupported: false,
       },
     });
+  });
+
+  it('returns a typed v0.8 public archive shape with conservative source disclosure', async () => {
+    const { service } = createV08ReadModelService();
+
+    const archive = await service.getPublicArchive('1');
+
+    expect(archive?.counts.executedDecisions).toBe(1);
+    expect(archive?.proposals).toEqual([
+      expect.objectContaining({
+        proposalId: '42',
+        displayState: ArchiveProposalDisplayState.Executed,
+        executionStatus: AccountabilityExecutionStatus.Completed,
+        evidenceCount: 1,
+      }),
+    ]);
+    expect(archive?.readModelStatus?.sourceCategory).toBe(
+      GovernanceRecordSourceCategory.DerivedDisplay,
+    );
+    expect(archive?.readModelStatus?.authorityClaim).toBe(
+      ExternalAuthorityClaim.None,
+    );
+  });
+
+  it('returns linked transaction accountability after an executed proposal', async () => {
+    const { service } = createV08ReadModelService();
+
+    const record = await service.getAccountabilityRecord('1', '42');
+
+    expect(record?.executionStatus).toBe(
+      AccountabilityExecutionStatus.Completed,
+    );
+    expect(record?.linkedTransaction).toEqual(
+      expect.objectContaining({
+        chainId: 31337,
+        txHash: '0xexecuted',
+        observedStatus: ObservedTransactionStatus.Confirmed,
+      }),
+    );
+    expect(record?.sourceDisclosure?.authorityClaim).toBe(
+      ExternalAuthorityClaim.ContractAuthoritative,
+    );
+  });
+
+  it('derives accountability without claiming manual or external authority when no row exists', async () => {
+    const { service } = createV08ReadModelService({
+      accountabilityRows: [],
+    });
+
+    const record = await service.getAccountabilityRecord('1', '42');
+
+    expect(record?.executionStatus).toBe(
+      AccountabilityExecutionStatus.Completed,
+    );
+    expect(record?.manualUpdates).toEqual([]);
+    expect(record?.sourceDisclosure).toEqual(
+      expect.objectContaining({
+        sourceCategory: GovernanceRecordSourceCategory.DerivedDisplay,
+        authorityClaim: ExternalAuthorityClaim.None,
+      }),
+    );
+  });
+
+  it('returns decision records with source disclosures and no external/manual authority escalation', async () => {
+    const { service } = createV08ReadModelService();
+
+    const record = await service.getDecisionRecord('1', '42');
+
+    expect(record?.sourceDisclosure).toEqual(
+      expect.objectContaining({
+        sourceCategory: GovernanceRecordSourceCategory.ContractReadModel,
+        authorityClaim: ExternalAuthorityClaim.ContractAuthoritative,
+      }),
+    );
+    expect(record?.evidence).toEqual([]);
+    expect(record?.finalOutcome?.sourceDisclosure?.trustBoundary).toBe(
+      ExternalTrustBoundary.OnchainObservation,
+    );
+  });
+
+  it('returns an empty typed external resource list when none are present', async () => {
+    const { service } = createV08ReadModelService();
+
+    await expect(service.getExternalResources('1', '42')).resolves.toEqual([]);
+  });
+
+  it('keeps v0.8 read-model request parameters in query parameters', async () => {
+    const { service, query } = createV08ReadModelService();
+
+    await service.getExternalResources('1', '42');
+
+    const proposalCall = query.mock.calls.find(([sql]) =>
+      normalizeSql(sql).includes('from proposals'),
+    );
+    expect(normalizeSql(proposalCall?.[0])).toContain(
+      'where chain_id = $1 and org_id = $2 and proposal_id = $3',
+    );
+    expect(proposalCall?.[1]).toEqual([31337, '1', '42']);
+
+    const externalResourcesCall = query.mock.calls.find(([sql]) =>
+      normalizeSql(sql).includes('from external_resources'),
+    );
+    expect(normalizeSql(externalResourcesCall?.[0])).toContain(
+      'where chain_id = $1 and org_id = $2 and proposal_id = $3',
+    );
+    expect(externalResourcesCall?.[1]).toEqual([31337, '1', '42']);
   });
 });
 
@@ -358,7 +475,8 @@ function createRouteService(fixture: RouteFixture): {
   });
   const db = { query } as unknown as DatabaseService;
   const config = {
-    evmContractsVersion: 'v0.7.0-alpha.3',
+    deploymentCapabilities: {},
+    contracts: {},
   } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
 }
@@ -374,14 +492,15 @@ function createPolicyListService(rows: readonly Record<string, unknown>[]): {
   );
   const db = { query } as unknown as DatabaseService;
   const config = {
-    evmContractsVersion: 'v0.7.0-alpha.3',
+    deploymentCapabilities: {},
+    contracts: {},
   } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
 }
 
 function createFinalizationService(
   row: Record<string, unknown> | undefined,
-  evmContractsVersion: string | undefined,
+  configOverrides: Partial<AppConfigService>,
 ): {
   service: ReadModelsService;
   query: QueryMock;
@@ -394,8 +513,146 @@ function createFinalizationService(
     });
   });
   const db = { query } as unknown as DatabaseService;
-  const config = { evmContractsVersion } as unknown as AppConfigService;
+  const config = {
+    deploymentCapabilities: {},
+    contracts: {},
+    ...configOverrides,
+  } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
+}
+
+function createV08ReadModelService(
+  overrides: {
+    readonly accountabilityRows?: readonly Record<string, unknown>[];
+    readonly externalResourceRows?: readonly Record<string, unknown>[];
+  } = {},
+): {
+  service: ReadModelsService;
+  query: QueryMock;
+} {
+  const organizationRow = {
+    chainId: 31337,
+    orgId: '1',
+    slug: 'demo',
+    name: 'Demo Org',
+    metadataUri: '',
+    adminAddress: '0x0000000000000000000000000000000000000001',
+    status: OrganizationStatus.Active,
+    createdBlock: '1',
+    createdTxHash: '0xcreated',
+    dataStatus: DataStatus.Confirmed,
+  };
+  const decisionProposalRow = {
+    chain_id: '31337',
+    org_id: '1',
+    proposal_id: '42',
+    proposal_type: ProposalType.Standard,
+    policy_version: '7',
+    title: 'Execute proposal action',
+    target_address: '0x0000000000000000000000000000000000000002',
+    value: '0',
+    status: ProposalStatus.Executed,
+    created_at_chain: '100',
+    queued_at_chain: '120',
+    executed_at_chain: '180',
+    updated_at: new Date('2026-01-01T00:00:00.000Z'),
+  };
+  const archiveRow = {
+    chainId: 31337,
+    orgId: '1',
+    proposalId: '42',
+    proposalType: ProposalType.Standard,
+    policyVersion: '7',
+    title: 'Execute proposal action',
+    status: ProposalStatus.Executed,
+    createdAtChain: '100',
+    queuedAtChain: '120',
+    executedAtChain: '180',
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    accountabilityId: 'accountability:31337:1:42',
+    executionStatus: AccountabilityExecutionStatus.Completed,
+    responsiblePartyLabel: null,
+    dueDate: null,
+    linkedTxHash: '0xexecuted',
+    manualUpdateCount: 0,
+    externalSourceCount: 0,
+  };
+  const accountabilityRows = overrides.accountabilityRows ?? [
+    {
+      chainId: 31337,
+      orgId: '1',
+      proposalId: '42',
+      id: 'accountability:31337:1:42',
+      decisionRecordId: 'decision:31337:1:42',
+      responsiblePartyLabel: null,
+      responsiblePartyWallet: null,
+      responsiblePartyExternalIdentityUrl: null,
+      dueDate: null,
+      executionStatus: AccountabilityExecutionStatus.Completed,
+      linkedTxHash: '0xexecuted',
+      linkedChainId: 31337,
+      linkedExplorerUrl: null,
+      linkedTxObservedStatus: ObservedTransactionStatus.Confirmed,
+      failureOrCancellationReason: null,
+      manualUpdates: [],
+      completionConfirmation: null,
+      sourceDisclosure: {
+        sourceCategory: GovernanceRecordSourceCategory.ContractReadModel,
+        sourceLabel: ExternalSourceLabel.OnchainTransaction,
+        trustBoundary: ExternalTrustBoundary.OnchainObservation,
+        authorityClaim: ExternalAuthorityClaim.ContractAuthoritative,
+      },
+    },
+  ];
+  const externalResourceRows = overrides.externalResourceRows ?? [];
+  const query: QueryMock = jest.fn((sql: string) => {
+    const normalized = normalizeSql(sql);
+    if (normalized.includes('from organizations')) {
+      return Promise.resolve({ rows: [organizationRow] });
+    }
+    if (
+      normalized.includes('from proposals p') &&
+      normalized.includes('left join accountability_records')
+    ) {
+      return Promise.resolve({ rows: [archiveRow] });
+    }
+    if (normalized.includes('from proposals')) {
+      return Promise.resolve({ rows: [decisionProposalRow] });
+    }
+    if (normalized.includes('from accountability_records')) {
+      return Promise.resolve({ rows: [...accountabilityRows] });
+    }
+    if (normalized.includes('from external_resources')) {
+      return Promise.resolve({ rows: [...externalResourceRows] });
+    }
+    if (normalized.includes('from policy_rules')) {
+      return Promise.resolve({ rows: [policy()] });
+    }
+    if (normalized.includes('from proposal_decisions')) {
+      return Promise.resolve({ rows: [approvalDecision('1')] });
+    }
+    return Promise.resolve({ rows: [] });
+  });
+  const db = { query } as unknown as DatabaseService;
+  const config = {
+    chainId: 31337,
+    protocolProfile: 'current',
+    deploymentCapabilities: {},
+    contracts: {
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
+    },
+  } as unknown as AppConfigService;
+  return { service: new ReadModelsService(db, config), query };
+}
+
+function supportedFinalizationConfig(): Partial<AppConfigService> {
+  return {
+    protocolProfile: 'current',
+    deploymentCapabilities: {},
+    contracts: {
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
+    },
+  } as unknown as Partial<AppConfigService>;
 }
 
 function currentPolicy(

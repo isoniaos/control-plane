@@ -1,4 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import {
+  parseDeploymentCapabilitiesJson,
+  parseIsoniaProtocolProfile,
+  type DeploymentCapabilitiesConfig,
+  type IsoniaProtocolProfile,
+} from '../system/deployment-capabilities';
 
 export interface ContractConfig {
   readonly govCoreAddress?: `0x${string}`;
@@ -35,9 +41,14 @@ export class AppConfigService {
     'http://127.0.0.1:5173',
   ]);
   readonly corsCredentials = this.readBoolean('CORS_CREDENTIALS', false);
-  readonly evmContractsVersion = this.readOptionalString(
-    'EVM_CONTRACTS_VERSION',
-  );
+  readonly protocolProfile: IsoniaProtocolProfile | undefined =
+    parseIsoniaProtocolProfile(
+      this.readOptionalString('ISONIA_PROTOCOL_PROFILE'),
+    );
+  readonly deploymentCapabilities: DeploymentCapabilitiesConfig =
+    parseDeploymentCapabilitiesJson(
+      this.readOptionalString('ISONIA_DEPLOYMENT_CAPABILITIES_JSON'),
+    );
 
   readonly contracts: ContractConfig = {
     govCoreAddress: this.readAddress('GOV_CORE_ADDRESS'),

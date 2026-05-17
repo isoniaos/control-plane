@@ -4,9 +4,9 @@ Public indexing, projection, diagnostics, and REST read API for IsoniaOS governa
 
 ## Status
 
-Active development target: v0.6 alpha preparation.
+Active development target: v0.8 accountability and integration preview.
 
-Current package version remains `0.5.0-alpha.3`, the v0.5 compatibility tag. v0.6 work starts from this baseline without changing the production authority model.
+Current package version is `0.8.0-alpha.1`. This wave adds a public archive/accountability read-model baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
 
 This repository is part of the public IsoniaOS open-source core. It is intended to be self-hostable and inspectable by DAO operators, developers, design partners, and future integrators.
 
@@ -17,6 +17,8 @@ Control Plane is not a source of governance authority.
 Smart contracts remain authoritative. Control Plane indexes chain events, stores raw events durably, builds replayable read models, explains proposal routes from indexed policy snapshots, exposes diagnostics, and serves typed REST APIs for App Core and SDK consumers.
 
 If Control Plane state disagrees with chain state, chain state wins.
+
+Archive, accountability, decision-record, and external-resource endpoints are read models. External resources are evidence or context unless a future explicit model gives a source a narrower authority claim. Control Plane does not infer governance authority from arbitrary target-contract events.
 
 The public App Core may display transaction controls, but those controls are UI hints. Contract authorization and execution rules remain final.
 
@@ -85,7 +87,7 @@ corepack pnpm db:migrate
 corepack pnpm dev
 ```
 
-`pnpm dev` starts the complete local Control Plane runtime for the current v0.6 baseline inherited from the v0.5 compatibility set:
+`pnpm dev` starts the complete local Control Plane runtime:
 
 - REST API;
 - continuous indexer;
@@ -120,33 +122,35 @@ Use `test:e2e` when REST behavior changes.
 
 ## Shared Package Dependency
 
-This package consumes shared DTOs and enums through the pinned v0.7 compatibility tag:
+This package consumes shared DTOs and enums through the pinned v0.8 compatibility tag:
 
 ```json
 {
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.7.0-alpha.2"
+    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.1"
   }
 }
 ```
 
 Do not duplicate shared DTOs locally. Add shared domain types to `@isonia/types` first.
 
-## v0.7 Activation Capabilities
+## v0.8 Capabilities
 
-Control Plane exposes activation capability metadata for v0.7 typed contract batch activation:
+Control Plane exposes activation capability metadata:
 
 ```txt
 GET /v1/capabilities
 ```
 
-The response reports serial activation as the fallback path. Contract-level typed batch activation is reported as supported when `EVM_CONTRACTS_VERSION` is configured for a compatible v0.7 deployment. `v0.7.0-alpha.1` supports typed contract batch activation; `v0.7.0-alpha.2` and `v0.7.0-alpha.3` carry that forward and additionally support bootstrap finalization. EIP-5792 remains optional/prototype wallet behavior and is not reported as the primary activation mode.
+The response reports serial activation as the fallback path. Contract-level typed batch activation and organization finalization are reported from deployment evidence: explicit deployment manifest capabilities, the configured protocol profile, and configured contract address presence. If Control Plane cannot prove a capability from that evidence, it reports `unknown` instead of deriving runtime behavior from package or release version strings. EIP-5792 remains unsupported/non-primary.
 
 Typed batch calls still emit granular domain events, so read-model recovery remains event-driven and equivalent to serial setup where the underlying contracts emit the existing per-item events.
 
-## v0.7 Bootstrap Finalization
+Old deployments are represented by Git tags, release artifacts, and deployment manifests. Compatibility metadata may be supplied through deployment capabilities, but active runtime capability reporting is not inferred from `@isonia/evm-contracts` package versions.
 
-Control Plane indexes the `OrganizationFinalized` event from compatible v0.7 contracts and projects organization finalization metadata for downstream clients:
+## Bootstrap Finalization
+
+Control Plane can index the `OrganizationFinalized` event from configured governance protocol deployments and project organization finalization metadata for downstream clients:
 
 ```txt
 GET /v1/orgs/:orgId/finalization
@@ -156,6 +160,26 @@ The read model reports whether finalization is supported, unknown, not finalized
 
 Emergency/recovery flows and governance-controlled post-finalization mutations are not implemented in this alpha. This software remains unaudited alpha infrastructure and should not be used as production governance authority.
 
+## v0.8 Archive And Accountability
+
+The v0.8 baseline exposes public archive/accountability read endpoints:
+
+```txt
+GET /v1/orgs/:orgId/archive
+GET /v1/orgs/:orgId/decision-records
+GET /v1/orgs/:orgId/proposals/:proposalId/decision-record
+GET /v1/orgs/:orgId/proposals/:proposalId/accountability
+GET /v1/orgs/:orgId/proposals/:proposalId/external-resources
+```
+
+The first v0.8 wave does not add server-side archive filters; clients can filter the returned archive summaries locally.
+
+Executed and cancelled governance proposals materialize accountability records from governance contract events. Executed proposals link to the observed transaction hash/status and generic proposal action metadata when available: target address, calldata hash, value, and future optional ABI/action metadata such as function selector.
+
+`external_resources` is present as a durable read model for future import/fixture work. This task does not add provider API calls, importers, manual write endpoints, SaaS behavior, or UI.
+
+Control Plane does not hardcode customer or demo-specific ABIs, does not index customer target contracts globally, and does not infer governance authority from arbitrary target-contract events. Future decoding should be modeled as optional ABI/action metadata or an explicit provider adapter.
+
 ## Indexer Configuration
 
 ```txt
@@ -163,7 +187,8 @@ CHAIN_ID=31337
 RPC_URL=http://127.0.0.1:8545
 GOV_CORE_ADDRESS=0x...
 GOV_PROPOSALS_ADDRESS=0x...
-EVM_CONTRACTS_VERSION=v0.7.0-alpha.3
+ISONIA_PROTOCOL_PROFILE=current
+ISONIA_DEPLOYMENT_CAPABILITIES_JSON={"activation":{"contractBatch":true},"finalization":{"organization":true}}
 START_BLOCK=0
 CONFIRMATIONS=0
 BLOCK_RANGE_SIZE=1000
@@ -175,6 +200,8 @@ CORS_CREDENTIALS=false
 
 Leave contract address variables blank until local contracts are deployed. The zero address is rejected so placeholder config cannot be mistaken for an indexed protocol deployment.
 
+`ISONIA_PROTOCOL_PROFILE=current` means the configured addresses are expected to point at the current IsoniaOS governance protocol implementation. `ISONIA_PROTOCOL_PROFILE=legacy` reports current typed activation/finalization capabilities as unsupported. `ISONIA_PROTOCOL_PROFILE=custom` is conservative and reports unknown unless `ISONIA_DEPLOYMENT_CAPABILITIES_JSON` supplies explicit capability statuses. Supported deployment capability values are `supported`, `unsupported`, `unknown`, `true`, and `false`.
+
 REST API is exposed under `/v1`.
 
 Diagnostics for operator support are available at:
@@ -184,11 +211,12 @@ GET /v1/diagnostics
 GET /v1/diagnostics/indexer
 GET /v1/capabilities
 GET /v1/orgs/:orgId/finalization
+GET /v1/orgs/:orgId/archive
 ```
 
 The diagnostics response includes API version, configured chain and contract addresses, latest observed and safe blocks when RPC is available, indexer cursors, raw event counts, projection backlog/failures, the latest projection error summary, and stale data indicators.
 
-Diagnostics also report whether `OrganizationFinalized` decoding is supported, the configured v0.7 contract compatibility status for finalization, finalization event counts, and whether a finalization event is the latest failed projection.
+Diagnostics also report whether `OrganizationFinalized` decoding is supported, the configured capability/profile evidence source for finalization, finalization event counts, and whether a finalization event is the latest failed projection.
 
 `/v1/diagnostics/indexer` adds local runtime process heartbeats for the API, indexer, and projection worker so App Core and developers can tell whether workers are running, stale, or unknown.
 

@@ -10,7 +10,15 @@ import {
   type OrganizationFinalizationCapability,
 } from '@isonia/types';
 import { AppConfigService } from '../config/app-config.service';
-import { getEvmContractsCompatibility } from './evm-contract-version';
+import {
+  deploymentCapabilitiesConfigured,
+  resolveContractBatchActivationCapability,
+  resolveOrganizationFinalizationCapability,
+  toActivationCapabilityStatus,
+  toOrganizationFinalizationCapabilityStatus,
+  type IsoniaProtocolProfile,
+  type RuntimeCapabilitySource,
+} from './deployment-capabilities';
 import { CONTROL_PLANE_API_VERSION } from './version';
 
 export interface ControlPlaneCapabilitiesDto {
@@ -18,6 +26,14 @@ export interface ControlPlaneCapabilitiesDto {
   readonly chainId: ChainId;
   readonly activation: ActivationCapabilities;
   readonly finalization: ControlPlaneFinalizationCapabilitiesDto;
+  readonly protocol: {
+    readonly profile?: IsoniaProtocolProfile;
+    readonly deploymentCapabilitiesConfigured: boolean;
+    readonly sources: {
+      readonly contractBatchActivation: RuntimeCapabilitySource;
+      readonly organizationFinalization: RuntimeCapabilitySource;
+    };
+  };
   readonly generatedAt: string;
 }
 
@@ -41,6 +57,7 @@ export class ActivationCapabilitiesService {
       chainId: this.config.chainId,
       activation: this.getActivationCapabilities(),
       finalization: this.getFinalizationCapabilities(),
+      protocol: this.getProtocolCapabilityMetadata(),
       generatedAt: new Date().toISOString(),
     };
   }
@@ -76,27 +93,15 @@ export class ActivationCapabilitiesService {
   }
 
   private getContractBatchStatus(): ActivationCapabilityStatus {
-    const compatibility = getEvmContractsCompatibility(
-      this.config.evmContractsVersion,
+    return toActivationCapabilityStatus(
+      resolveContractBatchActivationCapability(this.config),
     );
-    if (!compatibility) {
-      return ActivationCapabilityStatus.Unknown;
-    }
-    if (compatibility.activationContractBatch) {
-      return ActivationCapabilityStatus.Supported;
-    }
-    return ActivationCapabilityStatus.Unsupported;
   }
 
   getFinalizationCapabilities(): ControlPlaneFinalizationCapabilitiesDto {
-    const compatibility = getEvmContractsCompatibility(
-      this.config.evmContractsVersion,
+    const status = toOrganizationFinalizationCapabilityStatus(
+      resolveOrganizationFinalizationCapability(this.config),
     );
-    const status = !compatibility
-      ? ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unknown
-      : compatibility.organizationFinalization
-        ? ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported
-        : ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported;
 
     return {
       organization: {
@@ -111,6 +116,28 @@ export class ActivationCapabilitiesService {
       },
       governanceControlledPostFinalizationMutation: {
         status: ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported,
+      },
+    };
+  }
+
+  private getProtocolCapabilityMetadata(): ControlPlaneCapabilitiesDto['protocol'] {
+    const contractBatchActivation = resolveContractBatchActivationCapability(
+      this.config,
+    );
+    const organizationFinalization = resolveOrganizationFinalizationCapability(
+      this.config,
+    );
+
+    return {
+      ...(this.config.protocolProfile
+        ? { profile: this.config.protocolProfile }
+        : {}),
+      deploymentCapabilitiesConfigured: deploymentCapabilitiesConfigured(
+        this.config.deploymentCapabilities,
+      ),
+      sources: {
+        contractBatchActivation: contractBatchActivation.source,
+        organizationFinalization: organizationFinalization.source,
       },
     };
   }

@@ -51,4 +51,21 @@ describe('CONTROL_PLANE_SCHEMA_SQL', () => {
       'alter table organizations add column if not exists finalization_status',
     );
   });
+
+  it('adds v0.8 accountability and external resource read models', () => {
+    expect(sql).toContain('create table if not exists accountability_records');
+    expect(sql).toContain('primary key(chain_id, org_id, id)');
+    expect(sql).toContain('unique(chain_id, org_id, proposal_id)');
+    expect(sql).toContain('linked_tx_hash text');
+    expect(sql).toContain('target_address text');
+    expect(sql).toContain('function_selector text');
+    expect(sql).toContain('calldata_hash text');
+    expect(sql).toContain('value numeric');
+    expect(sql).toContain('source_disclosure jsonb');
+    expect(sql).toContain('create table if not exists external_resources');
+    expect(sql).toContain('authority_claim text not null');
+    expect(sql).toContain(
+      'create index if not exists external_resources_proposal_idx',
+    );
+  });
 });

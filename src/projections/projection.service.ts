@@ -11,11 +11,17 @@ import {
 } from '../chain/governance-events';
 import { DatabaseService } from '../database/database.service';
 import {
+  AccountabilityExecutionStatus,
   DataStatus,
   DecisionType,
+  ExternalAuthorityClaim,
+  ExternalSourceLabel,
+  ExternalTrustBoundary,
   GovernanceEventName,
+  GovernanceRecordSourceCategory,
   GraphEdgeType,
   GraphNodeType,
+  ObservedTransactionStatus,
   ORGANIZATION_FINALIZATION_STATUSES,
   OrganizationStatus,
   ProposalStatus,
@@ -780,6 +786,8 @@ export class ProjectionService {
     client: PoolClient,
     event: RawEventRow,
   ): Promise<void> {
+    const orgId = stringArg(event.args, 'orgId');
+    const proposalId = stringArg(event.args, 'proposalId');
     await client.query(
       `
         update proposals
@@ -790,11 +798,35 @@ export class ProjectionService {
       `,
       [
         event.chain_id,
-        stringArg(event.args, 'orgId'),
-        stringArg(event.args, 'proposalId'),
+        orgId,
+        proposalId,
         ProposalStatus.Executed,
         event.block_timestamp ?? '0',
       ],
+    );
+    await this.upsertAccountabilityRecord(
+      client,
+      event,
+      orgId,
+      proposalId,
+      AccountabilityExecutionStatus.Completed,
+      {
+        linkedTxHash: event.tx_hash,
+        linkedObservedStatus: ObservedTransactionStatus.Confirmed,
+        targetAddress: stringArg(event.args, 'targetAddress', 'target'),
+        calldataHash: stringArg(event.args, 'dataHash'),
+        value: await this.getProposalValue(
+          client,
+          event.chain_id,
+          orgId,
+          proposalId,
+        ),
+        sourceDisclosure: sourceDisclosure(
+          ExternalSourceLabel.OnchainTransaction,
+          ExternalAuthorityClaim.ContractAuthoritative,
+          'ProposalExecuted is contract-derived lifecycle state from the governance protocol. Action metadata is generic proposal execution metadata; target contracts are not decoded or treated as governance authority.',
+        ),
+      },
     );
   }
 
@@ -802,15 +834,127 @@ export class ProjectionService {
     client: PoolClient,
     event: RawEventRow,
   ): Promise<void> {
+    const orgId = stringArg(event.args, 'orgId');
+    const proposalId = stringArg(event.args, 'proposalId');
     await client.query(
       `update proposals set status = $4, updated_at = now() where chain_id = $1 and org_id = $2 and proposal_id = $3`,
+      [event.chain_id, orgId, proposalId, ProposalStatus.Cancelled],
+    );
+    await this.upsertAccountabilityRecord(
+      client,
+      event,
+      orgId,
+      proposalId,
+      AccountabilityExecutionStatus.Cancelled,
+      {
+        linkedTxHash: event.tx_hash,
+        linkedObservedStatus: ObservedTransactionStatus.Confirmed,
+        sourceDisclosure: sourceDisclosure(
+          ExternalSourceLabel.ContractState,
+          ExternalAuthorityClaim.ContractAuthoritative,
+          'ProposalCancelled is contract-derived lifecycle state from the governance protocol.',
+        ),
+      },
+    );
+  }
+
+  private async upsertAccountabilityRecord(
+    client: PoolClient,
+    event: RawEventRow,
+    orgId: string,
+    proposalId: string,
+    executionStatus: AccountabilityExecutionStatus,
+    options: {
+      readonly linkedTxHash?: string;
+      readonly linkedObservedStatus?: ObservedTransactionStatus;
+      readonly targetAddress?: string;
+      readonly functionSelector?: string;
+      readonly calldataHash?: string;
+      readonly value?: string;
+      readonly failureOrCancellationReason?: string;
+      readonly sourceDisclosure?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    const id = accountabilityRecordId(event.chain_id, orgId, proposalId);
+    const decisionRecordId = decisionRecordIdFor(
+      event.chain_id,
+      orgId,
+      proposalId,
+    );
+    await client.query(
+      `
+        insert into accountability_records (
+          chain_id,
+          org_id,
+          proposal_id,
+          id,
+          decision_record_id,
+          execution_status,
+          linked_tx_hash,
+          linked_chain_id,
+          linked_tx_observed_status,
+          target_address,
+          function_selector,
+          calldata_hash,
+          value,
+          failure_or_cancellation_reason,
+          source_disclosure,
+          data_status
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, lower($10), $11, $12, $13, $14, $15::jsonb, $16)
+        on conflict (chain_id, org_id, proposal_id) do update set
+          id = excluded.id,
+          decision_record_id = excluded.decision_record_id,
+          execution_status = excluded.execution_status,
+          linked_tx_hash = coalesce(excluded.linked_tx_hash, accountability_records.linked_tx_hash),
+          linked_chain_id = coalesce(excluded.linked_chain_id, accountability_records.linked_chain_id),
+          linked_tx_observed_status = coalesce(excluded.linked_tx_observed_status, accountability_records.linked_tx_observed_status),
+          target_address = coalesce(excluded.target_address, accountability_records.target_address),
+          function_selector = coalesce(excluded.function_selector, accountability_records.function_selector),
+          calldata_hash = coalesce(excluded.calldata_hash, accountability_records.calldata_hash),
+          value = coalesce(excluded.value, accountability_records.value),
+          failure_or_cancellation_reason = coalesce(excluded.failure_or_cancellation_reason, accountability_records.failure_or_cancellation_reason),
+          source_disclosure = coalesce(excluded.source_disclosure, accountability_records.source_disclosure),
+          data_status = excluded.data_status,
+          updated_at = now()
+      `,
       [
         event.chain_id,
-        stringArg(event.args, 'orgId'),
-        stringArg(event.args, 'proposalId'),
-        ProposalStatus.Cancelled,
+        orgId,
+        proposalId,
+        id,
+        decisionRecordId,
+        executionStatus,
+        options.linkedTxHash,
+        options.linkedTxHash ? event.chain_id : undefined,
+        options.linkedObservedStatus,
+        options.targetAddress,
+        options.functionSelector,
+        options.calldataHash,
+        options.value,
+        options.failureOrCancellationReason,
+        JSON.stringify(options.sourceDisclosure ?? null),
+        event.status,
       ],
     );
+  }
+
+  private async getProposalValue(
+    client: PoolClient,
+    chainId: string,
+    orgId: string,
+    proposalId: string,
+  ): Promise<string | undefined> {
+    const result = await client.query<{ value: string }>(
+      `
+        select value
+        from proposals
+        where chain_id = $1 and org_id = $2 and proposal_id = $3
+        limit 1
+      `,
+      [chainId, orgId, proposalId],
+    );
+    return result.rows[0]?.value;
   }
 
   private async proposalStatusChanged(
@@ -889,4 +1033,34 @@ function stringArg(
   legacyKey?: string,
 ): string {
   return asString(arg(args, key, legacyKey));
+}
+
+function accountabilityRecordId(
+  chainId: string,
+  orgId: string,
+  proposalId: string,
+): string {
+  return `accountability:${chainId}:${orgId}:${proposalId}`;
+}
+
+function decisionRecordIdFor(
+  chainId: string,
+  orgId: string,
+  proposalId: string,
+): string {
+  return `decision:${chainId}:${orgId}:${proposalId}`;
+}
+
+function sourceDisclosure(
+  sourceLabel: ExternalSourceLabel,
+  authorityClaim: ExternalAuthorityClaim,
+  note: string,
+): Record<string, unknown> {
+  return {
+    sourceCategory: GovernanceRecordSourceCategory.ContractReadModel,
+    sourceLabel,
+    trustBoundary: ExternalTrustBoundary.OnchainObservation,
+    authorityClaim,
+    note,
+  };
 }

@@ -1,6 +1,9 @@
 import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import type {
+  AccountabilityRecordDto,
   BodyDto,
+  DecisionRecordDto,
+  ExternalResourceDto,
   GovernanceGraphDto,
   MandateDto,
   OrganizationDto,
@@ -10,6 +13,7 @@ import type {
   ProposalDto,
   ProposalRouteExplanationDto,
   ProposalSummaryDto,
+  PublicOrganizationArchiveDto,
   RoleDto,
 } from '@isonia/types';
 import { ReadModelsService } from './read-models.service';
@@ -55,6 +59,17 @@ export class ReadModelsController {
       throw new NotFoundException('Organization not found');
     }
     return overview;
+  }
+
+  @Get('orgs/:orgId/archive')
+  async getPublicArchive(
+    @Param('orgId') orgId: string,
+  ): Promise<PublicOrganizationArchiveDto> {
+    const archive = await this.readModels.getPublicArchive(orgId);
+    if (!archive) {
+      throw new NotFoundException('Organization not found');
+    }
+    return archive;
   }
 
   @Get('orgs/:orgId/bodies')
@@ -112,6 +127,55 @@ export class ReadModelsController {
       throw new NotFoundException('Proposal not found');
     }
     return route;
+  }
+
+  @Get('orgs/:orgId/decision-records')
+  getDecisionRecords(
+    @Param('orgId') orgId: string,
+  ): Promise<DecisionRecordDto[]> {
+    return this.readModels.getDecisionRecords(orgId);
+  }
+
+  @Get('orgs/:orgId/proposals/:proposalId/decision-record')
+  async getDecisionRecord(
+    @Param('orgId') orgId: string,
+    @Param('proposalId') proposalId: string,
+  ): Promise<DecisionRecordDto> {
+    const record = await this.readModels.getDecisionRecord(orgId, proposalId);
+    if (!record) {
+      throw new NotFoundException('Proposal not found');
+    }
+    return record;
+  }
+
+  @Get('orgs/:orgId/proposals/:proposalId/accountability')
+  async getAccountabilityRecord(
+    @Param('orgId') orgId: string,
+    @Param('proposalId') proposalId: string,
+  ): Promise<AccountabilityRecordDto> {
+    const record = await this.readModels.getAccountabilityRecord(
+      orgId,
+      proposalId,
+    );
+    if (!record) {
+      throw new NotFoundException('Proposal not found');
+    }
+    return record;
+  }
+
+  @Get('orgs/:orgId/proposals/:proposalId/external-resources')
+  async getExternalResources(
+    @Param('orgId') orgId: string,
+    @Param('proposalId') proposalId: string,
+  ): Promise<ExternalResourceDto[]> {
+    const resources = await this.readModels.getExternalResources(
+      orgId,
+      proposalId,
+    );
+    if (!resources) {
+      throw new NotFoundException('Proposal not found');
+    }
+    return resources;
   }
 
   @Get('orgs/:orgId/graph')
