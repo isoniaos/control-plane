@@ -6,6 +6,8 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+## [0.8.0-alpha.1]
+
 ### Added
 
 - Added the v0.8 public archive/accountability read-model baseline with accountability records, external resources, decision records, and public organization archive REST endpoints.
@@ -110,8 +112,9 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 - Initial NestJS/PostgreSQL/viem Control Plane with indexing, projections, REST read models, diagnostics, and local scripts.
 
-[Unreleased]: https://github.com/isoniaos/control-plane/compare/v0.7.0-alpha.2...HEAD
-[0.7.0-alpha.2]: https://github.com/isoniaos/control-plane/compare/v0.7.0-alpha.1...v0.7.0-alpha.2
+[Unreleased]: https://github.com/isoniaos/control-plane/compare/v0.8.0-alpha.1...HEAD
+[0.8.0-alpha.1]: https://github.com/isoniaos/control-plane/releases/tag/v0.8.0-alpha.1
+[0.7.0-alpha.2]: https://github.com/isoniaos/control-plane/releases/tag/v0.7.0-alpha.2
 [0.7.0-alpha.1]: https://github.com/isoniaos/control-plane/releases/tag/v0.7.0-alpha.1
 [0.6.0-alpha.2]: https://github.com/isoniaos/control-plane/releases/tag/v0.6.0-alpha.2
 [0.5.0-alpha.3]: https://github.com/isoniaos/control-plane/releases/tag/v0.5.0-alpha.3
