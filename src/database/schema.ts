@@ -184,6 +184,64 @@ create table if not exists proposal_decisions (
   constraint proposal_decisions_identity_key unique(chain_id, org_id, proposal_id, body_id, decision_type)
 );
 
+create table if not exists accountability_records (
+  chain_id bigint not null,
+  org_id bigint not null,
+  proposal_id bigint not null,
+  id text not null,
+  decision_record_id text,
+  responsible_party_label text,
+  responsible_party_wallet text,
+  responsible_party_external_identity_url text,
+  due_date text,
+  execution_status text not null,
+  linked_tx_hash text,
+  linked_chain_id bigint,
+  linked_explorer_url text,
+  linked_tx_observed_status text,
+  target_address text,
+  function_selector text,
+  calldata_hash text,
+  value numeric,
+  failure_or_cancellation_reason text,
+  manual_updates jsonb not null default '[]'::jsonb,
+  completion_confirmation jsonb,
+  source_disclosure jsonb,
+  data_status text not null default 'current',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key(chain_id, org_id, id),
+  unique(chain_id, org_id, proposal_id)
+);
+
+create table if not exists external_resources (
+  chain_id bigint not null,
+  org_id bigint not null,
+  id text not null,
+  proposal_id bigint,
+  decision_record_id text,
+  accountability_record_id text,
+  provider text not null,
+  relation text not null,
+  url text not null,
+  canonical_ref text,
+  title text,
+  source_label text not null,
+  trust_boundary text not null,
+  authority_claim text not null,
+  import_status text,
+  observed_at timestamptz,
+  imported_at timestamptz,
+  imported_by text,
+  verification_method text,
+  source_disclosure jsonb,
+  raw_metadata_preview jsonb,
+  data_status text not null default 'current',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key(chain_id, org_id, id)
+);
+
 create table if not exists governance_edges (
   id bigserial primary key,
   chain_id bigint not null,
@@ -208,6 +266,9 @@ create index if not exists proposals_org_idx on proposals(chain_id, org_id, prop
 create index if not exists bodies_org_idx on bodies(chain_id, org_id);
 create index if not exists roles_org_idx on roles(chain_id, org_id);
 create index if not exists mandates_org_idx on mandates(chain_id, org_id);
+create index if not exists accountability_records_proposal_idx on accountability_records(chain_id, org_id, proposal_id);
+create index if not exists external_resources_proposal_idx on external_resources(chain_id, org_id, proposal_id);
+create index if not exists external_resources_accountability_idx on external_resources(chain_id, org_id, accountability_record_id);
 
 alter table organizations add column if not exists finalization_status text not null default 'unknown';
 alter table organizations add column if not exists finalized_admin_address text;
@@ -235,4 +296,41 @@ alter table proposal_decisions drop constraint if exists proposal_decisions_chai
 alter table proposal_decisions drop constraint if exists proposal_decisions_chain_id_proposal_id_body_id_decision_type_k;
 alter table proposal_decisions drop constraint if exists proposal_decisions_identity_key;
 alter table proposal_decisions add constraint proposal_decisions_identity_key unique(chain_id, org_id, proposal_id, body_id, decision_type);
+
+alter table accountability_records add column if not exists decision_record_id text;
+alter table accountability_records add column if not exists responsible_party_label text;
+alter table accountability_records add column if not exists responsible_party_wallet text;
+alter table accountability_records add column if not exists responsible_party_external_identity_url text;
+alter table accountability_records add column if not exists due_date text;
+alter table accountability_records add column if not exists linked_tx_hash text;
+alter table accountability_records add column if not exists linked_chain_id bigint;
+alter table accountability_records add column if not exists linked_explorer_url text;
+alter table accountability_records add column if not exists linked_tx_observed_status text;
+alter table accountability_records add column if not exists target_address text;
+alter table accountability_records add column if not exists function_selector text;
+alter table accountability_records add column if not exists calldata_hash text;
+alter table accountability_records add column if not exists value numeric;
+alter table accountability_records add column if not exists failure_or_cancellation_reason text;
+alter table accountability_records add column if not exists manual_updates jsonb not null default '[]'::jsonb;
+alter table accountability_records add column if not exists completion_confirmation jsonb;
+alter table accountability_records add column if not exists source_disclosure jsonb;
+alter table accountability_records add column if not exists data_status text not null default 'current';
+alter table accountability_records add column if not exists created_at timestamptz not null default now();
+alter table accountability_records add column if not exists updated_at timestamptz not null default now();
+
+alter table external_resources add column if not exists proposal_id bigint;
+alter table external_resources add column if not exists decision_record_id text;
+alter table external_resources add column if not exists accountability_record_id text;
+alter table external_resources add column if not exists canonical_ref text;
+alter table external_resources add column if not exists title text;
+alter table external_resources add column if not exists import_status text;
+alter table external_resources add column if not exists observed_at timestamptz;
+alter table external_resources add column if not exists imported_at timestamptz;
+alter table external_resources add column if not exists imported_by text;
+alter table external_resources add column if not exists verification_method text;
+alter table external_resources add column if not exists source_disclosure jsonb;
+alter table external_resources add column if not exists raw_metadata_preview jsonb;
+alter table external_resources add column if not exists data_status text not null default 'current';
+alter table external_resources add column if not exists created_at timestamptz not null default now();
+alter table external_resources add column if not exists updated_at timestamptz not null default now();
 `;

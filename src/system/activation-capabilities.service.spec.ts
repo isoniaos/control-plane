@@ -123,6 +123,21 @@ describe('ActivationCapabilitiesService', () => {
     },
   );
 
+  it.each(['0.8.0-alpha.1', 'v0.8.0-alpha.1', 'evm-contracts@v0.8.0-alpha.1'])(
+    'carries v0.7 activation and finalization support into %s',
+    (version) => {
+      const service = createService(version);
+
+      const capabilities = service.getCapabilities();
+
+      expect(capabilities.activation.flags.contractBatch).toBe(true);
+      expect(capabilities.activation.flags.walletBatchEip5792).toBe(false);
+      expect(capabilities.finalization.organization.status).toBe(
+        ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported,
+      );
+    },
+  );
+
   it('does not claim finalization support for unknown or older contract deployments', () => {
     expect(
       createService().getCapabilities().finalization.organization.status,

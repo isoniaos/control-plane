@@ -34,4 +34,13 @@ describe('governance event decoding', () => {
 
     expect(topics).toHaveLength(3);
   });
+
+  it('does not normalize arbitrary target-contract events without an adapter', () => {
+    expect(
+      normalizeDecodedGovernanceLog('TargetProofObserved', {
+        orgId: 1n,
+        amount: 123n,
+      }),
+    ).toBeUndefined();
+  });
 });

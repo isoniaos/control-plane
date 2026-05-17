@@ -48,6 +48,8 @@ export class DatabaseService implements OnModuleDestroy {
         current_policy_rules,
         proposals,
         proposal_decisions,
+        accountability_records,
+        external_resources,
         governance_edges
       restart identity cascade;
 
@@ -75,6 +77,8 @@ export class DatabaseService implements OnModuleDestroy {
         current_policy_rules,
         proposals,
         proposal_decisions,
+        accountability_records,
+        external_resources,
         governance_edges
       restart identity cascade;
     `);

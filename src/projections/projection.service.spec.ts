@@ -1,7 +1,9 @@
 import {
+  AccountabilityExecutionStatus,
   BodyKind,
   DataStatus,
   GovernanceEventName,
+  ObservedTransactionStatus,
   ORGANIZATION_FINALIZATION_STATUSES,
   ProposalStatus,
   ProposalType,
@@ -107,6 +109,37 @@ describe('ProjectionService', () => {
     ]);
   });
 
+  it('upserts an accountability record with generic execution proof metadata for ProposalExecuted', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      proposalExecutedEvent('1'),
+    ]);
+
+    await expect(service.processBatch(1)).resolves.toBe(1);
+
+    const accountabilityInsert = findSqlCall(
+      clientQuery,
+      'insert into accountability_records',
+    );
+    expect(accountabilityInsert[1]).toEqual(
+      expect.arrayContaining([
+        '31337',
+        '1',
+        '42',
+        'accountability:31337:1:42',
+        'decision:31337:1:42',
+        AccountabilityExecutionStatus.Completed,
+        '0xtx1',
+        ObservedTransactionStatus.Confirmed,
+        '0x0000000000000000000000000000000000000002',
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+        '0',
+      ]),
+    );
+    expect(String(accountabilityInsert[1][14])).toContain(
+      'target contracts are not decoded',
+    );
+  });
+
   it('projects OrganizationFinalized without changing organization active status', async () => {
     const { service, clientQuery } = createProjectionHarness([
       organizationFinalizedEvent('1'),
@@ -181,12 +214,18 @@ function createProjectionHarness(events: TestRawEvent[]): ProjectionHarness {
   const pendingEvents = [...events];
   const clientQuery: QueryMock = jest.fn((sql: string, values?: unknown[]) => {
     const normalized = normalizeSql(sql);
-    if (normalized.includes('from raw_events')) {
+    if (
+      normalized.includes('from raw_events') &&
+      normalized.includes('processed_at is null')
+    ) {
       const event = pendingEvents.shift();
       return Promise.resolve(queryResult(event ? [event] : []));
     }
     if (normalized.includes('from policy_rules')) {
       return Promise.resolve(queryResult([{ required_approval_bodies: [] }]));
+    }
+    if (normalized.includes('from proposals')) {
+      return Promise.resolve(queryResult([{ value: '0' }]));
     }
     return Promise.resolve(queryResult([], values));
   });
@@ -249,6 +288,30 @@ function proposalStatusChangedEvent(id: string): TestRawEvent {
       proposalId: '42',
       previousStatus: ProposalStatus.Approved,
       newStatus: ProposalStatus.Queued,
+    },
+  };
+}
+
+function proposalExecutedEvent(
+  id: string,
+  overrides: { readonly txHash?: string; readonly logIndex?: number } = {},
+): TestRawEvent {
+  return {
+    id,
+    chain_id: '31337',
+    block_number: '12',
+    tx_hash: overrides.txHash ?? `0xtx${id}`,
+    log_index: overrides.logIndex ?? Number(id),
+    event_name: GovernanceEventName.ProposalExecuted,
+    status: DataStatus.Confirmed,
+    block_timestamp: '102',
+    args: {
+      orgId: '1',
+      proposalId: '42',
+      executorAddress: '0x0000000000000000000000000000000000000004',
+      targetAddress: '0x0000000000000000000000000000000000000002',
+      dataHash:
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
     },
   };
 }

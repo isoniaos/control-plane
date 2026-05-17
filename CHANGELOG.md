@@ -6,6 +6,16 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added the v0.8 public archive/accountability read-model baseline with accountability records, external resources, decision records, and public organization archive REST endpoints.
+- Added v0.8 projection behavior that materializes accountability records for executed and cancelled proposals with linked transaction status and generic execution action metadata where available.
+
+### Changed
+
+- Updated the package version to `0.8.0-alpha.1` and pinned `@isonia/types` to `github:isoniaos/types#v0.8.0-alpha.1`.
+- Carried v0.7 typed activation and organization finalization capability flags forward for `EVM_CONTRACTS_VERSION=0.8.0-alpha.1`.
+
 ## [0.7.0-alpha.2]
 
 ### Added
