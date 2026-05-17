@@ -52,7 +52,10 @@ import {
 import { asStringArray } from '../chain/json';
 import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
-import { getEvmContractsCompatibility } from '../system/evm-contract-version';
+import {
+  resolveOrganizationFinalizationCapability,
+  toOrganizationFinalizationCapabilityStatus,
+} from '../system/deployment-capabilities';
 
 interface ProposalRouteRow {
   readonly chain_id: string;
@@ -1289,13 +1292,13 @@ export class ReadModelsService {
   private resolveFinalizationStatus(
     storedStatus: string,
   ): OrganizationFinalizationReadModelDto['finalizationStatus'] {
-    const compatibility = getEvmContractsCompatibility(
-      this.config.evmContractsVersion,
+    const capabilityStatus = toOrganizationFinalizationCapabilityStatus(
+      resolveOrganizationFinalizationCapability(this.config),
     );
-    if (!compatibility) {
+    if (capabilityStatus === ORGANIZATION_FINALIZATION_STATUSES.Unknown) {
       return ORGANIZATION_FINALIZATION_STATUSES.Unknown;
     }
-    if (!compatibility.organizationFinalization) {
+    if (capabilityStatus === ORGANIZATION_FINALIZATION_STATUSES.Unsupported) {
       return ORGANIZATION_FINALIZATION_STATUSES.Unsupported;
     }
     if (storedStatus === ORGANIZATION_FINALIZATION_STATUSES.Finalized) {

@@ -6,6 +6,10 @@ import {
   ORGANIZATION_FINALIZATION_CONTRACT_FUNCTION_NAME_VALUES,
 } from '@isonia/types';
 import { AppConfigService } from '../config/app-config.service';
+import type {
+  DeploymentCapabilitiesConfig,
+  IsoniaProtocolProfile,
+} from './deployment-capabilities';
 import { ActivationCapabilitiesService } from './activation-capabilities.service';
 
 describe('ActivationCapabilitiesService', () => {
@@ -28,8 +32,11 @@ describe('ActivationCapabilitiesService', () => {
     });
   });
 
-  it('reports v0.7 typed contract batch activation support from configured contract version', () => {
-    const service = createService('v0.7.0-alpha.1');
+  it('reports contract batch activation support from current profile and configured GovCore address', () => {
+    const service = createService({
+      protocolProfile: 'current',
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
+    });
 
     const capabilities = service.getActivationCapabilities();
 
@@ -44,22 +51,36 @@ describe('ActivationCapabilitiesService', () => {
     });
   });
 
-  it.each(['v0.7.0-alpha.2', 'evm-contracts@v0.7.0-alpha.3'])(
-    'keeps typed contract batch activation support for %s',
-    (version) => {
-      const service = createService(version);
+  it('uses explicit deployment capability metadata before profile defaults', () => {
+    const service = createService({
+      protocolProfile: 'legacy',
+      deploymentCapabilities: {
+        contractBatchActivation: 'supported',
+        organizationFinalization: 'supported',
+      },
+    });
 
-      const capabilities = service.getActivationCapabilities();
+    const capabilities = service.getCapabilities();
 
-      expect(capabilities.flags.contractBatch).toBe(true);
-      expect(capabilities.contractBatch.status).toBe(
-        ActivationCapabilityStatus.Supported,
-      );
-    },
-  );
+    expect(capabilities.activation.flags.contractBatch).toBe(true);
+    expect(capabilities.finalization.organization.status).toBe(
+      ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported,
+    );
+    expect(capabilities.protocol).toMatchObject({
+      profile: 'legacy',
+      deploymentCapabilitiesConfigured: true,
+      sources: {
+        contractBatchActivation: 'deployment_capabilities',
+        organizationFinalization: 'deployment_capabilities',
+      },
+    });
+  });
 
   it('does not report EIP-5792 as a primary or available activation mode', () => {
-    const service = createService('evm-contracts@v0.7.0-alpha.1');
+    const service = createService({
+      protocolProfile: 'current',
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
+    });
 
     const capabilities = service.getActivationCapabilities();
 
@@ -74,7 +95,9 @@ describe('ActivationCapabilitiesService', () => {
   });
 
   it('does not expose RPC or database secrets in the capability response', () => {
-    const service = createService('v0.7.0-alpha.1', {
+    const service = createService({
+      protocolProfile: 'current',
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
       rpcUrl: 'https://example.invalid/rpc?token=secret-rpc-token',
       databaseUrl: 'postgres://postgres:secret-db-pass@localhost/control-plane',
     });
@@ -86,8 +109,8 @@ describe('ActivationCapabilitiesService', () => {
     expect(serialized).not.toContain('postgres://');
   });
 
-  it('reports finalization as unsupported for v0.7.0-alpha.1 contract deployments', () => {
-    const service = createService('v0.7.0-alpha.1');
+  it('reports finalization as unsupported for legacy deployment profiles', () => {
+    const service = createService({ protocolProfile: 'legacy' });
 
     const capabilities = service.getCapabilities();
 
@@ -104,59 +127,68 @@ describe('ActivationCapabilitiesService', () => {
     ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported);
   });
 
-  it.each(['v0.7.0-alpha.2', 'evm-contracts@v0.7.0-alpha.3'])(
-    'reports finalization as supported for %s contract deployments',
-    (version) => {
-      const service = createService(version);
+  it('reports finalization as supported from current profile and configured GovCore address', () => {
+    const service = createService({
+      protocolProfile: 'current',
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
+    });
 
-      const capabilities = service.getCapabilities();
+    const capabilities = service.getCapabilities();
 
-      expect(capabilities.finalization.organization).toEqual({
-        status: ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported,
-        supportedFunctions: [
-          ...ORGANIZATION_FINALIZATION_CONTRACT_FUNCTION_NAME_VALUES,
-        ],
-      });
-      expect(capabilities.finalization.emergencyRecovery.status).toBe(
-        ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported,
-      );
-    },
-  );
+    expect(capabilities.finalization.organization).toEqual({
+      status: ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported,
+      supportedFunctions: [
+        ...ORGANIZATION_FINALIZATION_CONTRACT_FUNCTION_NAME_VALUES,
+      ],
+    });
+    expect(capabilities.finalization.emergencyRecovery.status).toBe(
+      ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported,
+    );
+    expect(capabilities.protocol.sources.organizationFinalization).toBe(
+      'contract_address_presence',
+    );
+  });
 
-  it.each(['0.8.0-alpha.1', 'v0.8.0-alpha.1', 'evm-contracts@v0.8.0-alpha.1'])(
-    'carries v0.7 activation and finalization support into %s',
-    (version) => {
-      const service = createService(version);
-
-      const capabilities = service.getCapabilities();
-
-      expect(capabilities.activation.flags.contractBatch).toBe(true);
-      expect(capabilities.activation.flags.walletBatchEip5792).toBe(false);
-      expect(capabilities.finalization.organization.status).toBe(
-        ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported,
-      );
-    },
-  );
-
-  it('does not claim finalization support for unknown or older contract deployments', () => {
+  it('does not claim finalization support when deployment evidence is missing', () => {
     expect(
       createService().getCapabilities().finalization.organization.status,
     ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unknown);
     expect(
-      createService('v0.6.0-alpha.2').getCapabilities().finalization
-        .organization.status,
+      createService({ protocolProfile: 'current' }).getCapabilities()
+        .finalization.organization.status,
+    ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unknown);
+  });
+
+  it('allows explicit deployment metadata to represent older unsupported deployments', () => {
+    expect(
+      createService({
+        deploymentCapabilities: {
+          contractBatchActivation: 'unsupported',
+          organizationFinalization: 'unsupported',
+        },
+      }).getCapabilities().finalization.organization.status,
     ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported);
   });
 });
 
 function createService(
-  evmContractsVersion?: string,
-  extraConfig: Partial<AppConfigService> = {},
+  options: Partial<{
+    readonly protocolProfile: IsoniaProtocolProfile;
+    readonly deploymentCapabilities: DeploymentCapabilitiesConfig;
+    readonly govCoreAddress: `0x${string}`;
+    readonly govProposalsAddress: `0x${string}`;
+  }> &
+    Partial<AppConfigService> = {},
 ): ActivationCapabilitiesService {
   const config = {
     chainId: 31337,
-    evmContractsVersion,
-    ...extraConfig,
+    protocolProfile: options.protocolProfile,
+    deploymentCapabilities: options.deploymentCapabilities ?? {},
+    contracts: {
+      govCoreAddress: options.govCoreAddress,
+      govProposalsAddress: options.govProposalsAddress,
+    },
+    ...options,
   } as unknown as AppConfigService;
   return new ActivationCapabilitiesService(config);
 }

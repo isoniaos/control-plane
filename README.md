@@ -142,13 +142,15 @@ Control Plane exposes activation capability metadata:
 GET /v1/capabilities
 ```
 
-The response reports serial activation as the fallback path. Contract-level typed batch activation is reported as supported when `EVM_CONTRACTS_VERSION` is configured for a compatible v0.7 or v0.8 deployment. `v0.8.0-alpha.1` carries forward the v0.7 typed batch activation and bootstrap finalization capability flags. EIP-5792 remains unsupported/non-primary.
+The response reports serial activation as the fallback path. Contract-level typed batch activation and organization finalization are reported from deployment evidence: explicit deployment manifest capabilities, the configured protocol profile, and configured contract address presence. If Control Plane cannot prove a capability from that evidence, it reports `unknown` instead of deriving runtime behavior from package or release version strings. EIP-5792 remains unsupported/non-primary.
 
 Typed batch calls still emit granular domain events, so read-model recovery remains event-driven and equivalent to serial setup where the underlying contracts emit the existing per-item events.
 
-## v0.7/v0.8 Bootstrap Finalization
+Old deployments are represented by Git tags, release artifacts, and deployment manifests. Compatibility metadata may be supplied through deployment capabilities, but active runtime capability reporting is not inferred from `@isonia/evm-contracts` package versions.
 
-Control Plane indexes the `OrganizationFinalized` event from compatible v0.7/v0.8 contracts and projects organization finalization metadata for downstream clients:
+## Bootstrap Finalization
+
+Control Plane can index the `OrganizationFinalized` event from configured governance protocol deployments and project organization finalization metadata for downstream clients:
 
 ```txt
 GET /v1/orgs/:orgId/finalization
@@ -185,7 +187,8 @@ CHAIN_ID=31337
 RPC_URL=http://127.0.0.1:8545
 GOV_CORE_ADDRESS=0x...
 GOV_PROPOSALS_ADDRESS=0x...
-EVM_CONTRACTS_VERSION=v0.8.0-alpha.1
+ISONIA_PROTOCOL_PROFILE=current
+ISONIA_DEPLOYMENT_CAPABILITIES_JSON={"activation":{"contractBatch":true},"finalization":{"organization":true}}
 START_BLOCK=0
 CONFIRMATIONS=0
 BLOCK_RANGE_SIZE=1000
@@ -196,6 +199,8 @@ CORS_CREDENTIALS=false
 ```
 
 Leave contract address variables blank until local contracts are deployed. The zero address is rejected so placeholder config cannot be mistaken for an indexed protocol deployment.
+
+`ISONIA_PROTOCOL_PROFILE=current` means the configured addresses are expected to point at the current IsoniaOS governance protocol implementation. `ISONIA_PROTOCOL_PROFILE=legacy` reports current typed activation/finalization capabilities as unsupported. `ISONIA_PROTOCOL_PROFILE=custom` is conservative and reports unknown unless `ISONIA_DEPLOYMENT_CAPABILITIES_JSON` supplies explicit capability statuses. Supported deployment capability values are `supported`, `unsupported`, `unknown`, `true`, and `false`.
 
 REST API is exposed under `/v1`.
 
@@ -211,7 +216,7 @@ GET /v1/orgs/:orgId/archive
 
 The diagnostics response includes API version, configured chain and contract addresses, latest observed and safe blocks when RPC is available, indexer cursors, raw event counts, projection backlog/failures, the latest projection error summary, and stale data indicators.
 
-Diagnostics also report whether `OrganizationFinalized` decoding is supported, the configured v0.7 contract compatibility status for finalization, finalization event counts, and whether a finalization event is the latest failed projection.
+Diagnostics also report whether `OrganizationFinalized` decoding is supported, the configured capability/profile evidence source for finalization, finalization event counts, and whether a finalization event is the latest failed projection.
 
 `/v1/diagnostics/indexer` adds local runtime process heartbeats for the API, indexer, and projection worker so App Core and developers can tell whether workers are running, stale, or unknown.
 

@@ -1,8 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  GovernanceEventName,
-  ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES,
-} from '@isonia/types';
+import { GovernanceEventName } from '@isonia/types';
 import type {
   Address,
   ChainId,
@@ -20,7 +17,13 @@ import { createPublicClient, http, type PublicClient } from 'viem';
 import { AppConfigService } from '../config/app-config.service';
 import { maskUrl } from '../config/safe-url';
 import { DatabaseService } from '../database/database.service';
-import { getEvmContractsCompatibility } from '../system/evm-contract-version';
+import {
+  deploymentCapabilitiesConfigured,
+  resolveOrganizationFinalizationCapability,
+  toOrganizationFinalizationCapabilityStatus,
+  type IsoniaProtocolProfile,
+  type RuntimeCapabilitySource,
+} from '../system/deployment-capabilities';
 import { CONTROL_PLANE_API_VERSION } from '../system/version';
 import {
   RuntimeHeartbeatService,
@@ -103,11 +106,13 @@ export interface IndexerDiagnosticsDto {
 
 export interface ControlPlaneDiagnosticsDto extends DiagnosticsDto {
   readonly protocol: {
-    readonly evmContractsVersion?: string;
+    readonly profile?: IsoniaProtocolProfile;
+    readonly deploymentCapabilitiesConfigured: boolean;
     readonly finalization: {
       readonly eventName: typeof GovernanceEventName.OrganizationFinalized;
       readonly eventDecodingSupported: true;
       readonly status: string;
+      readonly capabilitySource: RuntimeCapabilitySource;
       readonly rawEventCount: number;
       readonly projectedEventCount: number;
       readonly emergencyRecoverySupported: false;
@@ -187,13 +192,16 @@ export class DiagnosticsService {
       ...(latestError ? { latestProjectionError: latestError } : {}),
       staleDataIndicators: indicators,
       protocol: {
-        ...(this.config.evmContractsVersion
-          ? { evmContractsVersion: this.config.evmContractsVersion }
+        ...(this.config.protocolProfile
+          ? { profile: this.config.protocolProfile }
           : {}),
+        deploymentCapabilitiesConfigured: deploymentCapabilitiesConfigured(
+          this.config.deploymentCapabilities,
+        ),
         finalization: {
           eventName: GovernanceEventName.OrganizationFinalized,
           eventDecodingSupported: true,
-          status: this.getFinalizationCapabilityStatus(),
+          ...this.getFinalizationCapabilityStatus(),
           rawEventCount: finalizationEventCounts.rawEventCount,
           projectedEventCount: finalizationEventCounts.projectedEventCount,
           emergencyRecoverySupported: false,
@@ -466,16 +474,15 @@ export class DiagnosticsService {
     };
   }
 
-  private getFinalizationCapabilityStatus(): string {
-    const compatibility = getEvmContractsCompatibility(
-      this.config.evmContractsVersion,
-    );
-    if (!compatibility) {
-      return ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unknown;
-    }
-    return compatibility.organizationFinalization
-      ? ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported
-      : ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported;
+  private getFinalizationCapabilityStatus(): {
+    readonly status: string;
+    readonly capabilitySource: RuntimeCapabilitySource;
+  } {
+    const resolution = resolveOrganizationFinalizationCapability(this.config);
+    return {
+      status: toOrganizationFinalizationCapabilityStatus(resolution),
+      capabilitySource: resolution.source,
+    };
   }
 
   private toContractCursors(

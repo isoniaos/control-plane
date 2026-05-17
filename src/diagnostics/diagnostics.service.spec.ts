@@ -98,11 +98,13 @@ describe('DiagnosticsService', () => {
         processingAttempts: 2,
       },
       protocol: {
-        evmContractsVersion: 'v0.7.0-alpha.3',
+        profile: 'current',
+        deploymentCapabilitiesConfigured: false,
         finalization: {
           eventName: GovernanceEventName.OrganizationFinalized,
           eventDecodingSupported: true,
           status: ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Supported,
+          capabilitySource: 'contract_address_presence',
           rawEventCount: 2,
           projectedEventCount: 1,
           emergencyRecoverySupported: false,
@@ -344,7 +346,8 @@ function createService(): {
       govCoreAddress: '0x0000000000000000000000000000000000000001',
       govProposalsAddress: '0x0000000000000000000000000000000000000002',
     },
-    evmContractsVersion: 'v0.7.0-alpha.3',
+    protocolProfile: 'current',
+    deploymentCapabilities: {},
   } as unknown as AppConfigService;
   const getProcesses: GetProcessesMock = jest.fn(
     (processNames: readonly RuntimeProcessName[]) => {

@@ -248,7 +248,7 @@ describe('ReadModelsService', () => {
         finalizedTxHash: '0xtx',
         finalizedAt: '1000',
       },
-      'v0.7.0-alpha.3',
+      supportedFinalizationConfig(),
     );
 
     await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
@@ -281,7 +281,7 @@ describe('ReadModelsService', () => {
         storedFinalizationStatus:
           ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
       },
-      'v0.7.0-alpha.2',
+      supportedFinalizationConfig(),
     );
 
     await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
@@ -309,7 +309,11 @@ describe('ReadModelsService', () => {
         storedFinalizationStatus:
           ORGANIZATION_FINALIZATION_STATUSES.NotFinalized,
       },
-      'v0.7.0-alpha.1',
+      {
+        deploymentCapabilities: {
+          organizationFinalization: 'unsupported',
+        },
+      },
     );
 
     await expect(service.getOrganizationFinalization('1')).resolves.toEqual({
@@ -412,6 +416,28 @@ describe('ReadModelsService', () => {
 
     await expect(service.getExternalResources('1', '42')).resolves.toEqual([]);
   });
+
+  it('keeps v0.8 read-model request parameters in query parameters', async () => {
+    const { service, query } = createV08ReadModelService();
+
+    await service.getExternalResources('1', '42');
+
+    const proposalCall = query.mock.calls.find(([sql]) =>
+      normalizeSql(sql).includes('from proposals'),
+    );
+    expect(normalizeSql(proposalCall?.[0])).toContain(
+      'where chain_id = $1 and org_id = $2 and proposal_id = $3',
+    );
+    expect(proposalCall?.[1]).toEqual([31337, '1', '42']);
+
+    const externalResourcesCall = query.mock.calls.find(([sql]) =>
+      normalizeSql(sql).includes('from external_resources'),
+    );
+    expect(normalizeSql(externalResourcesCall?.[0])).toContain(
+      'where chain_id = $1 and org_id = $2 and proposal_id = $3',
+    );
+    expect(externalResourcesCall?.[1]).toEqual([31337, '1', '42']);
+  });
 });
 
 function createRouteService(fixture: RouteFixture): {
@@ -449,7 +475,8 @@ function createRouteService(fixture: RouteFixture): {
   });
   const db = { query } as unknown as DatabaseService;
   const config = {
-    evmContractsVersion: 'v0.7.0-alpha.3',
+    deploymentCapabilities: {},
+    contracts: {},
   } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
 }
@@ -465,14 +492,15 @@ function createPolicyListService(rows: readonly Record<string, unknown>[]): {
   );
   const db = { query } as unknown as DatabaseService;
   const config = {
-    evmContractsVersion: 'v0.7.0-alpha.3',
+    deploymentCapabilities: {},
+    contracts: {},
   } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
 }
 
 function createFinalizationService(
   row: Record<string, unknown> | undefined,
-  evmContractsVersion: string | undefined,
+  configOverrides: Partial<AppConfigService>,
 ): {
   service: ReadModelsService;
   query: QueryMock;
@@ -485,7 +513,11 @@ function createFinalizationService(
     });
   });
   const db = { query } as unknown as DatabaseService;
-  const config = { evmContractsVersion } as unknown as AppConfigService;
+  const config = {
+    deploymentCapabilities: {},
+    contracts: {},
+    ...configOverrides,
+  } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
 }
 
@@ -604,9 +636,23 @@ function createV08ReadModelService(
   const db = { query } as unknown as DatabaseService;
   const config = {
     chainId: 31337,
-    evmContractsVersion: 'v0.8.0-alpha.1',
+    protocolProfile: 'current',
+    deploymentCapabilities: {},
+    contracts: {
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
+    },
   } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
+}
+
+function supportedFinalizationConfig(): Partial<AppConfigService> {
+  return {
+    protocolProfile: 'current',
+    deploymentCapabilities: {},
+    contracts: {
+      govCoreAddress: '0x0000000000000000000000000000000000000001',
+    },
+  } as unknown as Partial<AppConfigService>;
 }
 
 function currentPolicy(

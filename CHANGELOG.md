@@ -14,7 +14,7 @@ All notable changes to `@isonia/control-plane` are documented here.
 ### Changed
 
 - Updated the package version to `0.8.0-alpha.1` and pinned `@isonia/types` to `github:isoniaos/types#v0.8.0-alpha.1`.
-- Carried v0.7 typed activation and organization finalization capability flags forward for `EVM_CONTRACTS_VERSION=0.8.0-alpha.1`.
+- Replaced package-version-driven runtime capability assumptions with deployment/profile capability evidence via `ISONIA_PROTOCOL_PROFILE` and optional `ISONIA_DEPLOYMENT_CAPABILITIES_JSON`.
 
 ## [0.7.0-alpha.2]
 
