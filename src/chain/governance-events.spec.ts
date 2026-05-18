@@ -1,4 +1,4 @@
-import { GovernanceEventName } from '@isonia/types';
+import { GovernanceEventName, ProposalType } from '@isonia/types';
 import { encodeEventTopics } from 'viem';
 import { ISONIA_EVENT_ABI } from './isonia-abi';
 import { normalizeDecodedGovernanceLog } from './governance-events';
@@ -104,6 +104,61 @@ describe('governance event decoding', () => {
 
     expect(targetTopics).toHaveLength(4);
     expect(selectorTopics).toHaveLength(3);
+  });
+
+  it('normalizes ProposalCreated event args with actionSelector', () => {
+    const decoded = normalizeDecodedGovernanceLog(
+      GovernanceEventName.ProposalCreated,
+      {
+        orgId: 1n,
+        proposalId: 42n,
+        proposalType: 1,
+        policyVersion: 7n,
+        creator: '0x000000000000000000000000000000000000000A',
+        target: '0x00000000000000000000000000000000000000BB',
+        value: 1000n,
+        actionSelector: '0xA9059CBB',
+        dataHash:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+        metadataURI: 'ipfs://proposal',
+      },
+    );
+
+    expect(decoded).toEqual({
+      eventName: GovernanceEventName.ProposalCreated,
+      args: {
+        orgId: '1',
+        proposalId: '42',
+        proposalType: ProposalType.Standard,
+        policyVersion: '7',
+        creatorAddress: '0x000000000000000000000000000000000000000a',
+        targetAddress: '0x00000000000000000000000000000000000000bb',
+        value: '1000',
+        actionSelector: '0xa9059cbb',
+        dataHash:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+        metadataUri: 'ipfs://proposal',
+      },
+    });
+  });
+
+  it('includes actionSelector in the ProposalCreated indexed ABI shape', () => {
+    const event = ISONIA_EVENT_ABI.find(
+      (entry) => entry.name === 'ProposalCreated',
+    );
+
+    expect(event?.inputs.map((input) => input.name)).toEqual([
+      'orgId',
+      'proposalId',
+      'proposalType',
+      'policyVersion',
+      'creator',
+      'target',
+      'value',
+      'actionSelector',
+      'dataHash',
+      'metadataURI',
+    ]);
   });
 
   it('does not normalize arbitrary target-contract events without an adapter', () => {

@@ -6,7 +6,7 @@ Public indexing, projection, diagnostics, and REST read API for IsoniaOS governa
 
 Active development target: v0.8 accountability and integration preview.
 
-Current package version is `0.8.0-alpha.2`. This wave adds execution permission registry read models on top of the public archive/accountability baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
+Current package version is `0.8.0-alpha.3`. This wave adds selector-aware proposal action identity on top of the execution permission registry and public archive/accountability baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
 
 This repository is part of the public IsoniaOS open-source core. It is intended to be self-hostable and inspectable by DAO operators, developers, design partners, and future integrators.
 
@@ -19,6 +19,8 @@ Smart contracts remain authoritative. Control Plane indexes chain events, stores
 If Control Plane state disagrees with chain state, chain state wins.
 
 Archive, accountability, decision-record, execution-permission, and external-resource endpoints are read models. Execution target and selector rules are authoritative only because they are emitted by the configured IsoniaOS governance protocol contracts. External resources are evidence or context unless a future explicit model gives a source a narrower authority claim. Control Plane does not infer governance authority from arbitrary target-contract events.
+
+Proposal action identity is indexed only from IsoniaOS protocol events. For v0.8.0-alpha.3 proposals, Control Plane stores the protocol-declared action selector alongside target address, value, and calldata hash. The selector is an action hint for read-model explanation and execution permission checks; full calldata hash verification remains authoritative for the execution payload.
 
 The public App Core may display transaction controls, but those controls are UI hints. Contract authorization and execution rules remain final.
 
@@ -127,7 +129,7 @@ This package consumes shared DTOs and enums through the pinned v0.8 compatibilit
 ```json
 {
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.2"
+    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.3"
   }
 }
 ```
@@ -174,7 +176,7 @@ GET /v1/orgs/:orgId/proposals/:proposalId/external-resources
 
 The first v0.8 wave does not add server-side archive filters; clients can filter the returned archive summaries locally.
 
-Executed and cancelled governance proposals materialize accountability records from governance contract events. Executed proposals link to the observed transaction hash/status and generic proposal action metadata when available: target address, calldata hash, value, and future optional ABI/action metadata such as function selector.
+Executed and cancelled governance proposals materialize accountability records from governance contract events. Executed proposals link to the observed transaction hash/status and generic proposal action metadata when available: target address, protocol-declared action selector, calldata hash, and value.
 
 `external_resources` is present as a durable read model for future import/fixture work. This task does not add provider API calls, importers, manual write endpoints, SaaS behavior, or UI.
 
@@ -185,11 +187,14 @@ Control Plane does not hardcode customer or demo-specific ABIs, does not index c
 Control Plane indexes the v0.8 IsoniaOS governance protocol events:
 
 ```txt
+ProposalCreated
 ExecutionTargetRuleUpdated
 ExecutionSelectorRuleUpdated
 ```
 
-These events materialize org-scoped execution target and selector rules in `execution_target_rules` and `execution_selector_rules`. The read endpoint is:
+`ProposalCreated` stores selector-aware proposal action identity as `target_address`, `value`, `action_selector`, and `data_hash`. The selector is protocol-declared and lowercased with a `0x` prefix. It is not decoded from arbitrary customer calldata, and Control Plane does not guess selectors from calldata hashes.
+
+The rule update events materialize org-scoped execution target and selector rules in `execution_target_rules` and `execution_selector_rules`. The read endpoint is:
 
 ```txt
 GET /v1/orgs/:orgId/execution-permissions
@@ -197,7 +202,7 @@ GET /v1/orgs/:orgId/execution-permissions
 
 The endpoint returns shared `OrganizationExecutionPermissionsDto` data from `@isonia/types`.
 
-Route explanation uses the registry only when capability evidence says it is supported by explicit deployment capabilities or the configured current protocol profile plus `GOV_PROPOSALS_ADDRESS`. If a supported registry has no enabled target rule, route explanation reports `execution_target_not_allowed`. If the proposal value exceeds the target max value, it reports `execution_value_limit_exceeded`. If selector rules exist but only the proposal calldata hash is available, it reports `execution_calldata_unavailable` rather than guessing.
+Route explanation uses the registry only when capability evidence says it is supported by explicit deployment capabilities or the configured current protocol profile plus `GOV_PROPOSALS_ADDRESS`. If a supported registry has no enabled target rule, route explanation reports `execution_target_not_allowed`. If the proposal value exceeds the target max value, it reports `execution_value_limit_exceeded`. If selector rules exist and the proposal has a stored action selector, route explanation compares that selector to `execution_selector_rules` without requiring calldata. If selector rules exist but a legacy proposal row has no stored selector, it reports `execution_calldata_unavailable` rather than guessing.
 
 This does not add arbitrary customer contract indexing, DemoTarget decoding, ABI-based action decoding, provider APIs, write endpoints, SaaS behavior, or external provider integrations.
 

@@ -72,6 +72,7 @@ interface ProposalRouteRow {
   readonly status: ProposalStatus;
   readonly target_address: Address | null;
   readonly value: string;
+  readonly action_selector: string | null;
   readonly data_hash: string | null;
   readonly queued_at_chain: string | null;
   readonly executable_at_chain: string | null;
@@ -264,6 +265,7 @@ interface ExecutionRouteTargetRuleRow {
   readonly enabled: boolean;
   readonly max_value: string;
   readonly selector_rule_count: number | string;
+  readonly selector_enabled: boolean | null;
 }
 
 @Injectable()
@@ -660,7 +662,8 @@ export class ReadModelsService {
         select chain_id::int as "chainId", org_id as "orgId", proposal_id as "proposalId",
                proposal_type as "proposalType", policy_version as "policyVersion", title,
                description_uri as "descriptionUri", target_address as "targetAddress",
-               value, data_hash as "dataHash", creator_address as "creatorAddress",
+               value, action_selector as "actionSelector", data_hash as "dataHash",
+               creator_address as "creatorAddress",
                status, created_block as "createdBlock", created_tx_hash as "createdTxHash",
                created_at_chain as "createdAtChain", queued_at_chain as "queuedAtChain",
                executable_at_chain as "executableAtChain", executed_at_chain as "executedAtChain",
@@ -844,12 +847,21 @@ export class ReadModelsService {
           );
         }
         if (Number(executionTargetRule.selector_rule_count) > 0) {
-          blockedReasons.push(
-            reason(
-              RouteBlockedReasonCode.ExecutionCalldataUnavailable,
-              'Selector-level execution permission cannot be verified because only calldata hash is available in the proposal read model.',
-            ),
-          );
+          if (!proposal.action_selector) {
+            blockedReasons.push(
+              reason(
+                RouteBlockedReasonCode.ExecutionCalldataUnavailable,
+                'Selector-level execution permission cannot be verified because the proposal action selector is unavailable in the read model.',
+              ),
+            );
+          } else if (executionTargetRule.selector_enabled !== true) {
+            blockedReasons.push(
+              reason(
+                RouteBlockedReasonCode.ExecutionSelectorNotAllowed,
+                'Proposal execution selector is not allowed by the onchain execution permission registry.',
+              ),
+            );
+          }
         }
       }
     }
@@ -1441,12 +1453,23 @@ export class ReadModelsService {
                  select count(*)::int
                  from execution_selector_rules
                  where chain_id = $1 and org_id = $2 and target_address = lower($3)
-               ) as selector_rule_count
+               ) as selector_rule_count,
+               (
+                 select enabled
+                 from execution_selector_rules
+                 where chain_id = $1 and org_id = $2 and target_address = lower($3) and selector = lower($4)
+                 limit 1
+               ) as selector_enabled
         from execution_target_rules
         where chain_id = $1 and org_id = $2 and target_address = lower($3)
         limit 1
       `,
-      [proposal.chain_id, proposal.org_id, proposal.target_address],
+      [
+        proposal.chain_id,
+        proposal.org_id,
+        proposal.target_address,
+        proposal.action_selector,
+      ],
     );
     return result.rows[0];
   }

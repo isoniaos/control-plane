@@ -339,6 +339,46 @@ describe('ReadModelsService', () => {
     });
   });
 
+  it('uses the stored proposal action selector for selector registry checks', async () => {
+    const { service } = createRouteService({
+      executionPermissionRegistrySupported: true,
+      proposal: proposal({ action_selector: '0xa9059cbb' }),
+      executionTargetRule: executionTargetRule({
+        selector_rule_count: 1,
+        selector_enabled: true,
+      }),
+      decisions: [approvalDecision('1')],
+      bodies: [{ body_id: '1', name: 'Council' }],
+    });
+
+    const route = await service.getProposalRoute('1', '42');
+
+    expect(route?.execution.executable).toBe(true);
+    expect(route?.execution.blockedReasons).toEqual([]);
+  });
+
+  it('reports selector permission blockers when a known selector is not allowed', async () => {
+    const { service } = createRouteService({
+      executionPermissionRegistrySupported: true,
+      proposal: proposal({ action_selector: '0x095ea7b3' }),
+      executionTargetRule: executionTargetRule({
+        selector_rule_count: 1,
+        selector_enabled: false,
+      }),
+      decisions: [approvalDecision('1')],
+      bodies: [{ body_id: '1', name: 'Council' }],
+    });
+
+    const route = await service.getProposalRoute('1', '42');
+
+    expect(route?.execution.executable).toBe(false);
+    expect(route?.execution.blockedReasons).toContainEqual({
+      code: RouteBlockedReasonCode.ExecutionSelectorNotAllowed,
+      message:
+        'Proposal execution selector is not allowed by the onchain execution permission registry.',
+    });
+  });
+
   it('does not infer selector permission when calldata is unavailable', async () => {
     const { service } = createRouteService({
       executionPermissionRegistrySupported: true,
@@ -353,7 +393,7 @@ describe('ReadModelsService', () => {
     expect(route?.execution.blockedReasons).toContainEqual({
       code: RouteBlockedReasonCode.ExecutionCalldataUnavailable,
       message:
-        'Selector-level execution permission cannot be verified because only calldata hash is available in the proposal read model.',
+        'Selector-level execution permission cannot be verified because the proposal action selector is unavailable in the read model.',
     });
   });
 
@@ -363,6 +403,7 @@ describe('ReadModelsService', () => {
       proposal: proposal({
         org_id: '1; drop table organizations;',
         target_address: '0x00000000000000000000000000000000000000aa',
+        action_selector: '0xa9059cbb',
       }),
       executionTargetRule: executionTargetRule(),
       decisions: [approvalDecision('1')],
@@ -381,7 +422,48 @@ describe('ReadModelsService', () => {
       '31337',
       '1; drop table organizations;',
       '0x00000000000000000000000000000000000000aa',
+      '0xa9059cbb',
     ]);
+  });
+
+  it('returns ProposalDto actionSelector when known', async () => {
+    const query: QueryMock = jest.fn((sql: string, params?: unknown[]) => {
+      void sql;
+      void params;
+      return Promise.resolve({
+        rows: [
+          {
+            chainId: 31337,
+            orgId: '1',
+            proposalId: '42',
+            proposalType: ProposalType.Standard,
+            policyVersion: '7',
+            title: 'Execute proposal action',
+            targetAddress: '0x0000000000000000000000000000000000000002',
+            value: '0',
+            actionSelector: '0xa9059cbb',
+            dataHash:
+              '0x0000000000000000000000000000000000000000000000000000000000000000',
+            creatorAddress: '0x0000000000000000000000000000000000000001',
+            status: ProposalStatus.Approved,
+            createdBlock: '10',
+            createdTxHash: '0xtx',
+            createdAtChain: '100',
+            dataStatus: DataStatus.Confirmed,
+          },
+        ],
+      });
+    });
+    const db = { query } as unknown as DatabaseService;
+    const config = { chainId: 31337 } as unknown as AppConfigService;
+    const service = new ReadModelsService(db, config);
+
+    const proposalDto = await service.getProposal('1', '42');
+
+    expect(proposalDto?.actionSelector).toBe('0xa9059cbb');
+    expect(normalizeSql(query.mock.calls[0]?.[0])).toContain(
+      'action_selector as "actionselector"',
+    );
   });
 
   it('returns finalization read metadata for finalized active organizations', async () => {

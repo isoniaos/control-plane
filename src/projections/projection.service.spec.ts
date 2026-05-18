@@ -69,7 +69,7 @@ describe('ProjectionService', () => {
     expect(dbQuery.mock.calls[0][1]).toEqual([31337]);
   });
 
-  it('projects ProposalCreated policyVersion into proposals', async () => {
+  it('projects ProposalCreated policyVersion and actionSelector into proposals', async () => {
     const { service, clientQuery } = createProjectionHarness([
       proposalCreatedEvent('1'),
     ]);
@@ -80,7 +80,9 @@ describe('ProjectionService', () => {
     expect(normalizeSql(proposalInsert[0])).toContain(
       'on conflict (chain_id, org_id, proposal_id) do update',
     );
+    expect(normalizeSql(proposalInsert[0])).toContain('action_selector');
     expect(proposalInsert[1][4]).toBe('7');
+    expect(proposalInsert[1][8]).toBe('0xa9059cbb');
     expect(proposalInsert[1]).toEqual(
       expect.arrayContaining([
         '42',
@@ -88,6 +90,17 @@ describe('ProjectionService', () => {
         ProposalStatus.Approved,
       ]),
     );
+  });
+
+  it('stores a null proposal action selector for legacy ProposalCreated raw events', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      legacyProposalCreatedEvent('1'),
+    ]);
+
+    await expect(service.processBatch(1)).resolves.toBe(1);
+
+    const proposalInsert = findSqlCall(clientQuery, 'insert into proposals');
+    expect(proposalInsert[1][8]).toBeNull();
   });
 
   it('updates proposal status from ProposalStatusChanged', async () => {
@@ -330,10 +343,21 @@ function proposalCreatedEvent(id: string): TestRawEvent {
       creatorAddress: '0x0000000000000000000000000000000000000001',
       targetAddress: '0x0000000000000000000000000000000000000002',
       value: '0',
+      actionSelector: '0xa9059cbb',
       dataHash:
         '0x0000000000000000000000000000000000000000000000000000000000000000',
       metadataUri: 'ipfs://proposal',
     },
+  };
+}
+
+function legacyProposalCreatedEvent(id: string): TestRawEvent {
+  const event = proposalCreatedEvent(id);
+  const { actionSelector, ...args } = event.args;
+  void actionSelector;
+  return {
+    ...event,
+    args,
   };
 }
 

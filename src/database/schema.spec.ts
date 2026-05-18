@@ -10,6 +10,13 @@ describe('CONTROL_PLANE_SCHEMA_SQL', () => {
     expect(sql).toContain('primary key(chain_id, org_id, proposal_id)');
   });
 
+  it('stores nullable proposal action selectors for selector-aware identity', () => {
+    expect(sql).toContain('action_selector text');
+    expect(sql).toContain(
+      'alter table proposals add column if not exists action_selector text',
+    );
+  });
+
   it('uses an org-scoped proposal decision identity', () => {
     expect(sql).toContain(
       'constraint proposal_decisions_identity_key unique(chain_id, org_id, proposal_id, body_id, decision_type)',

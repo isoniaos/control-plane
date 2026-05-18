@@ -8,6 +8,8 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ### Added
 
+- Added selector-aware `ProposalCreated` decoding and proposal projection support for the v0.8.0-alpha.3 protocol action identity: target address, value, action selector, and calldata hash.
+- Added route explanation checks that compare stored proposal action selectors against execution selector registry rules without requiring calldata.
 - Added v0.8 execution permission registry indexing for `ExecutionTargetRuleUpdated` and `ExecutionSelectorRuleUpdated` IsoniaOS governance protocol events.
 - Added replayable `execution_target_rules` and `execution_selector_rules` read models with idempotent org-scoped upserts.
 - Added `GET /v1/orgs/:orgId/execution-permissions` returning the shared `OrganizationExecutionPermissionsDto` shape.
@@ -15,7 +17,10 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ### Changed
 
-- Updated the package version to `0.8.0-alpha.2` and pinned `@isonia/types` to `github:isoniaos/types#v0.8.0-alpha.2`.
+- Updated `ProposalDto` responses to expose the protocol-declared `actionSelector` when known.
+- Updated legacy selector behavior so missing proposal selectors remain explicit and conservative instead of being guessed from calldata hashes.
+- Documented that Control Plane does not decode arbitrary customer ABIs or infer authority from target-contract events; the protocol-declared selector is a read-model action hint while calldata hash verification remains authoritative for the execution payload.
+- Updated the package version to `0.8.0-alpha.3` and pinned `@isonia/types` to `github:isoniaos/types#v0.8.0-alpha.3`.
 - Kept execution permission capability decisions tied to explicit deployment/profile/address evidence rather than package version strings.
 
 ## [0.8.0-alpha.1]

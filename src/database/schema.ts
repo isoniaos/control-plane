@@ -179,6 +179,7 @@ create table if not exists proposals (
   description_uri text,
   target_address text,
   value numeric not null,
+  action_selector text,
   data_hash text,
   creator_address text not null,
   status text not null,
@@ -326,6 +327,7 @@ alter table execution_selector_rules drop constraint if exists execution_selecto
 alter table execution_selector_rules add primary key (chain_id, org_id, target_address, selector);
 
 alter table proposals drop constraint if exists proposals_pkey;
+alter table proposals add column if not exists action_selector text;
 alter table proposals add primary key (chain_id, org_id, proposal_id);
 
 alter table proposal_decisions drop constraint if exists proposal_decisions_chain_id_proposal_id_body_id_decision_type_key;

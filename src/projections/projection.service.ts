@@ -760,16 +760,17 @@ export class ProjectionService {
       `
         insert into proposals (
           chain_id, proposal_id, org_id, proposal_type, policy_version, title,
-          target_address, value, data_hash, creator_address, status, created_block,
+          target_address, value, action_selector, data_hash, creator_address, status, created_block,
           created_tx_hash, created_at_chain, metadata_uri, data_status
         )
-        values ($1, $2, $3, $4, $5, $6, lower($7), $8, $9, lower($10), $11, $12, $13, $14, $15, $16)
+        values ($1, $2, $3, $4, $5, $6, lower($7), $8, lower($9), $10, lower($11), $12, $13, $14, $15, $16, $17)
         on conflict (chain_id, org_id, proposal_id) do update set
           proposal_type = excluded.proposal_type,
           policy_version = excluded.policy_version,
           title = excluded.title,
           target_address = excluded.target_address,
           value = excluded.value,
+          action_selector = excluded.action_selector,
           data_hash = excluded.data_hash,
           creator_address = excluded.creator_address,
           status = excluded.status,
@@ -786,6 +787,7 @@ export class ProjectionService {
         fallbackName('Proposal', proposalId, metadataUri),
         arg(event.args, 'targetAddress', 'target'),
         stringArg(event.args, 'value'),
+        optionalStringArg(event.args, 'actionSelector'),
         arg(event.args, 'dataHash'),
         arg(event.args, 'creatorAddress', 'creator'),
         initialStatus,
@@ -1120,6 +1122,15 @@ function stringArg(
   legacyKey?: string,
 ): string {
   return asString(arg(args, key, legacyKey));
+}
+
+function optionalStringArg(
+  args: Record<string, unknown>,
+  key: string,
+  legacyKey?: string,
+): string | null {
+  const value = args[key] ?? (legacyKey ? args[legacyKey] : undefined);
+  return value === undefined || value === null ? null : asString(value);
 }
 
 function accountabilityRecordId(

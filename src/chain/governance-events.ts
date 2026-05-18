@@ -202,6 +202,7 @@ export function normalizeDecodedGovernanceLog(
           creatorAddress: asAddress(args.creator),
           targetAddress: asAddress(args.target),
           value: asString(args.value),
+          actionSelector: asBytes4Selector(args.actionSelector),
           dataHash: asBytes32Hash(args.dataHash),
           metadataUri: asString(args.metadataURI),
         } satisfies ProposalCreatedEventArgsDto,

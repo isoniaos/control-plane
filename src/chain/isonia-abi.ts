@@ -147,6 +147,7 @@ export const ISONIA_EVENT_ABI = [
       { name: 'creator', type: 'address', indexed: false },
       { name: 'target', type: 'address', indexed: false },
       { name: 'value', type: 'uint256', indexed: false },
+      { name: 'actionSelector', type: 'bytes4', indexed: false },
       { name: 'dataHash', type: 'bytes32', indexed: false },
       { name: 'metadataURI', type: 'string', indexed: false },
     ],
