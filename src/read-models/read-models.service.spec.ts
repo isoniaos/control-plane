@@ -25,6 +25,8 @@ interface RouteFixture {
   readonly policy?: Record<string, unknown> | null;
   readonly decisions?: readonly Record<string, unknown>[];
   readonly bodies?: readonly Record<string, unknown>[];
+  readonly executionPermissionRegistrySupported?: boolean;
+  readonly executionTargetRule?: Record<string, unknown> | null;
 }
 
 interface QueryResultStub {
@@ -111,6 +113,57 @@ describe('ReadModelsService', () => {
     expect(normalizeSql(query.mock.calls[0]?.[0])).toContain(
       'from current_policy_rules where org_id = $1',
     );
+  });
+
+  it('returns execution permission rules grouped by target', async () => {
+    const { service } = createExecutionPermissionsService();
+
+    await expect(service.getExecutionPermissions('1')).resolves.toEqual({
+      orgId: '1',
+      targets: [
+        {
+          orgId: '1',
+          targetAddress: '0x0000000000000000000000000000000000000002',
+          enabled: true,
+          maxValue: '1000',
+          updatedAtBlockNumber: '14',
+          updatedAtTxHash: '0xtarget',
+          updatedByAddress: '0x0000000000000000000000000000000000000004',
+          selectors: [
+            {
+              orgId: '1',
+              targetAddress: '0x0000000000000000000000000000000000000002',
+              selector: '0xa9059cbb',
+              enabled: true,
+              updatedAtBlockNumber: '15',
+              updatedAtTxHash: '0xselector',
+              updatedByAddress: '0x0000000000000000000000000000000000000004',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('keeps execution permission queries parameterized by chain and org', async () => {
+    const { service, query } = createExecutionPermissionsService();
+
+    await service.getExecutionPermissions('1; drop table organizations;');
+
+    const targetCall = query.mock.calls.find(([sql]) =>
+      normalizeSql(sql).includes('from execution_target_rules'),
+    );
+    const selectorCall = query.mock.calls.find(([sql]) =>
+      normalizeSql(sql).includes('from execution_selector_rules'),
+    );
+    expect(normalizeSql(targetCall?.[0])).toContain(
+      'where chain_id = $1 and org_id = $2',
+    );
+    expect(targetCall?.[1]).toEqual([31337, '1; drop table organizations;']);
+    expect(normalizeSql(selectorCall?.[0])).toContain(
+      'where chain_id = $1 and org_id = $2',
+    );
+    expect(selectorCall?.[1]).toEqual([31337, '1; drop table organizations;']);
   });
 
   it('reports a missing policy snapshot in proposal route explanations', async () => {
@@ -235,6 +288,100 @@ describe('ReadModelsService', () => {
 
     expect(route?.execution.executable).toBe(true);
     expect(route?.execution.blockedReasons).toEqual([]);
+  });
+
+  it('does not apply execution permission blockers without capability evidence', async () => {
+    const { service } = createRouteService({
+      decisions: [approvalDecision('1')],
+      bodies: [{ body_id: '1', name: 'Council' }],
+      executionTargetRule: null,
+    });
+
+    const route = await service.getProposalRoute('1', '42');
+
+    expect(route?.execution.executable).toBe(true);
+    expect(route?.execution.blockedReasons).toEqual([]);
+  });
+
+  it('reports missing execution target permissions when the registry is supported', async () => {
+    const { service } = createRouteService({
+      executionPermissionRegistrySupported: true,
+      executionTargetRule: null,
+      decisions: [approvalDecision('1')],
+      bodies: [{ body_id: '1', name: 'Council' }],
+    });
+
+    const route = await service.getProposalRoute('1', '42');
+
+    expect(route?.execution.executable).toBe(false);
+    expect(route?.execution.blockedReasons).toContainEqual({
+      code: RouteBlockedReasonCode.ExecutionTargetNotAllowed,
+      message:
+        'Proposal execution target is not allowed by the onchain execution permission registry.',
+    });
+  });
+
+  it('reports execution value limits from the registry', async () => {
+    const { service } = createRouteService({
+      executionPermissionRegistrySupported: true,
+      proposal: proposal({ value: '1001' }),
+      executionTargetRule: executionTargetRule({ max_value: '1000' }),
+      decisions: [approvalDecision('1')],
+      bodies: [{ body_id: '1', name: 'Council' }],
+    });
+
+    const route = await service.getProposalRoute('1', '42');
+
+    expect(route?.execution.executable).toBe(false);
+    expect(route?.execution.blockedReasons).toContainEqual({
+      code: RouteBlockedReasonCode.ExecutionValueLimitExceeded,
+      message: 'Proposal execution value exceeds the target rule max value.',
+    });
+  });
+
+  it('does not infer selector permission when calldata is unavailable', async () => {
+    const { service } = createRouteService({
+      executionPermissionRegistrySupported: true,
+      executionTargetRule: executionTargetRule({ selector_rule_count: 1 }),
+      decisions: [approvalDecision('1')],
+      bodies: [{ body_id: '1', name: 'Council' }],
+    });
+
+    const route = await service.getProposalRoute('1', '42');
+
+    expect(route?.execution.executable).toBe(false);
+    expect(route?.execution.blockedReasons).toContainEqual({
+      code: RouteBlockedReasonCode.ExecutionCalldataUnavailable,
+      message:
+        'Selector-level execution permission cannot be verified because only calldata hash is available in the proposal read model.',
+    });
+  });
+
+  it('keeps route execution permission lookup parameters bound', async () => {
+    const { service, query } = createRouteService({
+      executionPermissionRegistrySupported: true,
+      proposal: proposal({
+        org_id: '1; drop table organizations;',
+        target_address: '0x00000000000000000000000000000000000000aa',
+      }),
+      executionTargetRule: executionTargetRule(),
+      decisions: [approvalDecision('1')],
+      bodies: [{ body_id: '1', name: 'Council' }],
+    });
+
+    await service.getProposalRoute('1; drop table organizations;', '42');
+
+    const targetCall = query.mock.calls.find(([sql]) =>
+      normalizeSql(sql).includes('from execution_target_rules'),
+    );
+    expect(normalizeSql(targetCall?.[0])).toContain(
+      'target_address = lower($3)',
+    );
+    expect(targetCall?.[1]).toEqual([
+      '31337',
+      '1; drop table organizations;',
+      '0x00000000000000000000000000000000000000aa',
+    ]);
   });
 
   it('returns finalization read metadata for finalized active organizations', async () => {
@@ -471,10 +618,77 @@ function createRouteService(fixture: RouteFixture): {
         rows: [...(fixture.decisions ?? [approvalDecision('1')])],
       });
     }
+    if (normalized.includes('from execution_target_rules')) {
+      return Promise.resolve({
+        rows: Object.prototype.hasOwnProperty.call(
+          fixture,
+          'executionTargetRule',
+        )
+          ? fixture.executionTargetRule
+            ? [fixture.executionTargetRule]
+            : []
+          : [],
+      });
+    }
     return Promise.resolve({ rows: [] });
   });
   const db = { query } as unknown as DatabaseService;
   const config = {
+    chainId: 31337,
+    protocolProfile: fixture.executionPermissionRegistrySupported
+      ? 'current'
+      : undefined,
+    deploymentCapabilities: {},
+    contracts: fixture.executionPermissionRegistrySupported
+      ? {
+          govProposalsAddress: '0x0000000000000000000000000000000000000002',
+        }
+      : {},
+  } as unknown as AppConfigService;
+  return { service: new ReadModelsService(db, config), query };
+}
+
+function createExecutionPermissionsService(): {
+  service: ReadModelsService;
+  query: QueryMock;
+} {
+  const query: QueryMock = jest.fn((sql: string) => {
+    const normalized = normalizeSql(sql);
+    if (normalized.includes('from execution_target_rules')) {
+      return Promise.resolve({
+        rows: [
+          {
+            orgId: '1',
+            targetAddress: '0x0000000000000000000000000000000000000002',
+            enabled: true,
+            maxValue: '1000',
+            updatedAtBlockNumber: '14',
+            updatedAtTxHash: '0xtarget',
+            updatedByAddress: '0x0000000000000000000000000000000000000004',
+          },
+        ],
+      });
+    }
+    if (normalized.includes('from execution_selector_rules')) {
+      return Promise.resolve({
+        rows: [
+          {
+            orgId: '1',
+            targetAddress: '0x0000000000000000000000000000000000000002',
+            selector: '0xa9059cbb',
+            enabled: true,
+            updatedAtBlockNumber: '15',
+            updatedAtTxHash: '0xselector',
+            updatedByAddress: '0x0000000000000000000000000000000000000004',
+          },
+        ],
+      });
+    }
+    return Promise.resolve({ rows: [] });
+  });
+  const db = { query } as unknown as DatabaseService;
+  const config = {
+    chainId: 31337,
     deploymentCapabilities: {},
     contracts: {},
   } as unknown as AppConfigService;
@@ -683,8 +897,23 @@ function proposal(
     proposal_type: ProposalType.Standard,
     policy_version: '7',
     status: ProposalStatus.Approved,
+    target_address: '0x0000000000000000000000000000000000000002',
+    value: '0',
+    data_hash:
+      '0x0000000000000000000000000000000000000000000000000000000000000000',
     queued_at_chain: null,
     executable_at_chain: null,
+    ...overrides,
+  };
+}
+
+function executionTargetRule(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    enabled: true,
+    max_value: '1000',
+    selector_rule_count: 0,
     ...overrides,
   };
 }

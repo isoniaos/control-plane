@@ -5,8 +5,11 @@ import {
   type BodyUpdatedEventArgsDto,
   BodyKind,
   type Bytes32Hash,
+  type ExecutionSelectorRuleUpdatedEventArgsDto,
+  type ExecutionTargetRuleUpdatedEventArgsDto,
   type GovernanceEventArgsDto,
   GovernanceEventName,
+  type HexString,
   type JsonObject,
   type MandateAssignedEventArgsDto,
   type MandateRevokedEventArgsDto,
@@ -166,6 +169,28 @@ export function normalizeDecodedGovernanceLog(
           enabled: Boolean(args.enabled),
         } satisfies PolicyRuleSetEventArgsDto,
       };
+    case GovernanceEventName.ExecutionTargetRuleUpdated:
+      return {
+        eventName,
+        args: {
+          orgId: asString(args.orgId),
+          targetAddress: asAddress(args.target),
+          enabled: Boolean(args.enabled),
+          maxValue: asString(args.maxValue),
+          actorAddress: asAddress(args.actor),
+        } satisfies ExecutionTargetRuleUpdatedEventArgsDto,
+      };
+    case GovernanceEventName.ExecutionSelectorRuleUpdated:
+      return {
+        eventName,
+        args: {
+          orgId: asString(args.orgId),
+          targetAddress: asAddress(args.target),
+          selector: asBytes4Selector(args.selector),
+          enabled: Boolean(args.enabled),
+          actorAddress: asAddress(args.actor),
+        } satisfies ExecutionSelectorRuleUpdatedEventArgsDto,
+      };
     case GovernanceEventName.ProposalCreated:
       return {
         eventName,
@@ -307,4 +332,8 @@ function asAddress(value: unknown): Address {
 
 function asBytes32Hash(value: unknown): Bytes32Hash {
   return asString(value) as Bytes32Hash;
+}
+
+function asBytes4Selector(value: unknown): HexString {
+  return asString(value).toLowerCase() as HexString;
 }

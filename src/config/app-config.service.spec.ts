@@ -55,7 +55,7 @@ describe('AppConfigService', () => {
   it('parses explicit deployment capability metadata', () => {
     process.env.ISONIA_PROTOCOL_PROFILE = 'current';
     process.env.ISONIA_DEPLOYMENT_CAPABILITIES_JSON =
-      '{"activation":{"contractBatch":true},"finalization":{"organization":"unsupported"}}';
+      '{"activation":{"contractBatch":true},"finalization":{"organization":"unsupported"},"execution":{"permissionRegistry":true}}';
 
     const config = new AppConfigService();
 
@@ -63,6 +63,7 @@ describe('AppConfigService', () => {
     expect(config.deploymentCapabilities).toEqual({
       contractBatchActivation: 'supported',
       organizationFinalization: 'unsupported',
+      executionPermissionRegistry: 'supported',
     });
   });
 

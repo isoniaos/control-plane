@@ -8,6 +8,9 @@ import {
   type BodyDto,
   type DecisionRecordDto,
   DecisionRecordResult,
+  type ExecutionSelectorRuleDto,
+  type ExecutionTargetPermissionDto,
+  type ExecutionTargetRuleDto,
   type ExternalResourceDto,
   type ExternalResourceRefDto,
   ExternalAuthorityClaim,
@@ -24,6 +27,7 @@ import {
   type MandateDto,
   type NumericString,
   type OrganizationDto,
+  type OrganizationExecutionPermissionsDto,
   type OrganizationFinalizationReadModelDto,
   type OrganizationOverviewCountsDto,
   type OrganizationOverviewDto,
@@ -53,6 +57,8 @@ import { asStringArray } from '../chain/json';
 import { AppConfigService } from '../config/app-config.service';
 import { DatabaseService } from '../database/database.service';
 import {
+  DEPLOYMENT_CAPABILITY_STATUSES,
+  resolveExecutionPermissionRegistryCapability,
   resolveOrganizationFinalizationCapability,
   toOrganizationFinalizationCapabilityStatus,
 } from '../system/deployment-capabilities';
@@ -64,6 +70,9 @@ interface ProposalRouteRow {
   readonly proposal_type: ProposalType;
   readonly policy_version: string;
   readonly status: ProposalStatus;
+  readonly target_address: Address | null;
+  readonly value: string;
+  readonly data_hash: string | null;
   readonly queued_at_chain: string | null;
   readonly executable_at_chain: string | null;
 }
@@ -229,6 +238,32 @@ interface OrganizationFinalizationRow {
   readonly finalizedBlock: NumericString | null;
   readonly finalizedTxHash: TransactionHash | null;
   readonly finalizedAt: string | null;
+}
+
+interface ExecutionTargetRuleRow {
+  readonly orgId: string;
+  readonly targetAddress: Address;
+  readonly enabled: boolean;
+  readonly maxValue: string;
+  readonly updatedAtBlockNumber: NumericString | null;
+  readonly updatedAtTxHash: TransactionHash | null;
+  readonly updatedByAddress: Address | null;
+}
+
+interface ExecutionSelectorRuleRow {
+  readonly orgId: string;
+  readonly targetAddress: Address;
+  readonly selector: string;
+  readonly enabled: boolean;
+  readonly updatedAtBlockNumber: NumericString | null;
+  readonly updatedAtTxHash: TransactionHash | null;
+  readonly updatedByAddress: Address | null;
+}
+
+interface ExecutionRouteTargetRuleRow {
+  readonly enabled: boolean;
+  readonly max_value: string;
+  readonly selector_rule_count: number | string;
 }
 
 @Injectable()
@@ -538,6 +573,64 @@ export class ReadModelsService {
     );
   }
 
+  async getExecutionPermissions(
+    orgId: string,
+  ): Promise<OrganizationExecutionPermissionsDto> {
+    const [targetResult, selectorResult] = await Promise.all([
+      this.db.query<ExecutionTargetRuleRow>(
+        `
+          select org_id as "orgId",
+                 target_address as "targetAddress",
+                 enabled,
+                 max_value as "maxValue",
+                 updated_at_block_number as "updatedAtBlockNumber",
+                 updated_at_tx_hash as "updatedAtTxHash",
+                 updated_by_address as "updatedByAddress"
+          from execution_target_rules
+          where chain_id = $1 and org_id = $2
+          order by target_address asc
+        `,
+        [this.config.chainId, orgId],
+      ),
+      this.db.query<ExecutionSelectorRuleRow>(
+        `
+          select org_id as "orgId",
+                 target_address as "targetAddress",
+                 selector,
+                 enabled,
+                 updated_at_block_number as "updatedAtBlockNumber",
+                 updated_at_tx_hash as "updatedAtTxHash",
+                 updated_by_address as "updatedByAddress"
+          from execution_selector_rules
+          where chain_id = $1 and org_id = $2
+          order by target_address asc, selector asc
+        `,
+        [this.config.chainId, orgId],
+      ),
+    ]);
+
+    const selectorsByTarget = new Map<string, ExecutionSelectorRuleDto[]>();
+    for (const selector of selectorResult.rows) {
+      const targetAddress = selector.targetAddress.toLowerCase();
+      const selectors = selectorsByTarget.get(targetAddress) ?? [];
+      selectors.push(toExecutionSelectorRule(selector));
+      selectorsByTarget.set(targetAddress, selectors);
+    }
+
+    const targets: ExecutionTargetPermissionDto[] = targetResult.rows.map(
+      (target) => ({
+        ...toExecutionTargetRule(target),
+        selectors:
+          selectorsByTarget.get(target.targetAddress.toLowerCase()) ?? [],
+      }),
+    );
+
+    return {
+      orgId,
+      targets,
+    };
+  }
+
   async getProposals(
     orgId: string,
     limit = 100,
@@ -617,6 +710,8 @@ export class ReadModelsService {
       orgId,
       proposalId,
     );
+    const executionTargetRule =
+      await this.getExecutionTargetRuleForRoute(proposal);
 
     const requiredApprovalBodies: RouteBodyRequirementDto[] =
       requiredBodies.map((bodyId) => {
@@ -725,6 +820,38 @@ export class ReadModelsService {
       blockedReasons.push(
         reason(RouteBlockedReasonCode.Expired, 'Proposal is expired.'),
       );
+    }
+    if (
+      this.executionPermissionRegistrySupported() &&
+      proposal.target_address
+    ) {
+      if (!executionTargetRule || !executionTargetRule.enabled) {
+        blockedReasons.push(
+          reason(
+            RouteBlockedReasonCode.ExecutionTargetNotAllowed,
+            'Proposal execution target is not allowed by the onchain execution permission registry.',
+          ),
+        );
+      } else {
+        if (
+          isValueExceedingLimit(proposal.value, executionTargetRule.max_value)
+        ) {
+          blockedReasons.push(
+            reason(
+              RouteBlockedReasonCode.ExecutionValueLimitExceeded,
+              'Proposal execution value exceeds the target rule max value.',
+            ),
+          );
+        }
+        if (Number(executionTargetRule.selector_rule_count) > 0) {
+          blockedReasons.push(
+            reason(
+              RouteBlockedReasonCode.ExecutionCalldataUnavailable,
+              'Selector-level execution permission cannot be verified because only calldata hash is available in the proposal read model.',
+            ),
+          );
+        }
+      }
     }
 
     return normalizeRow<ProposalRouteExplanationDto>({
@@ -1289,6 +1416,41 @@ export class ReadModelsService {
     );
   }
 
+  private executionPermissionRegistrySupported(): boolean {
+    return (
+      resolveExecutionPermissionRegistryCapability(this.config).status ===
+      DEPLOYMENT_CAPABILITY_STATUSES.Supported
+    );
+  }
+
+  private async getExecutionTargetRuleForRoute(
+    proposal: ProposalRouteRow,
+  ): Promise<ExecutionRouteTargetRuleRow | undefined> {
+    if (
+      !this.executionPermissionRegistrySupported() ||
+      !proposal.target_address
+    ) {
+      return undefined;
+    }
+
+    const result = await this.db.query<ExecutionRouteTargetRuleRow>(
+      `
+        select enabled,
+               max_value,
+               (
+                 select count(*)::int
+                 from execution_selector_rules
+                 where chain_id = $1 and org_id = $2 and target_address = lower($3)
+               ) as selector_rule_count
+        from execution_target_rules
+        where chain_id = $1 and org_id = $2 and target_address = lower($3)
+        limit 1
+      `,
+      [proposal.chain_id, proposal.org_id, proposal.target_address],
+    );
+    return result.rows[0];
+  }
+
   private resolveFinalizationStatus(
     storedStatus: string,
   ): OrganizationFinalizationReadModelDto['finalizationStatus'] {
@@ -1328,6 +1490,38 @@ function lifecycleStatus(
     return ORGANIZATION_LIFECYCLE_STATUSES.ActiveNotFinalized;
   }
   return ORGANIZATION_LIFECYCLE_STATUSES.Unknown;
+}
+
+function toExecutionTargetRule(
+  row: ExecutionTargetRuleRow,
+): ExecutionTargetRuleDto {
+  return normalizeRow<ExecutionTargetRuleDto>({
+    orgId: row.orgId,
+    targetAddress: row.targetAddress.toLowerCase(),
+    enabled: row.enabled,
+    maxValue: row.maxValue,
+    updatedAtBlockNumber: row.updatedAtBlockNumber,
+    updatedAtTxHash: row.updatedAtTxHash,
+    updatedByAddress: row.updatedByAddress?.toLowerCase(),
+  });
+}
+
+function toExecutionSelectorRule(
+  row: ExecutionSelectorRuleRow,
+): ExecutionSelectorRuleDto {
+  return normalizeRow<ExecutionSelectorRuleDto>({
+    orgId: row.orgId,
+    targetAddress: row.targetAddress.toLowerCase(),
+    selector: row.selector.toLowerCase(),
+    enabled: row.enabled,
+    updatedAtBlockNumber: row.updatedAtBlockNumber,
+    updatedAtTxHash: row.updatedAtTxHash,
+    updatedByAddress: row.updatedByAddress?.toLowerCase(),
+  });
+}
+
+function isValueExceedingLimit(value: string, maxValue: string): boolean {
+  return BigInt(value) > BigInt(maxValue);
 }
 
 function reason(

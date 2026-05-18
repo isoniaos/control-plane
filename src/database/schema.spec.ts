@@ -68,4 +68,20 @@ describe('CONTROL_PLANE_SCHEMA_SQL', () => {
       'create index if not exists external_resources_proposal_idx',
     );
   });
+
+  it('adds v0.8 execution permission registry read models', () => {
+    expect(sql).toContain('create table if not exists execution_target_rules');
+    expect(sql).toContain('primary key(chain_id, org_id, target_address)');
+    expect(sql).toContain('max_value numeric not null');
+    expect(sql).toContain('updated_at_block_number bigint not null');
+    expect(sql).toContain(
+      'create table if not exists execution_selector_rules',
+    );
+    expect(sql).toContain(
+      'primary key(chain_id, org_id, target_address, selector)',
+    );
+    expect(sql).toContain(
+      'create index if not exists execution_selector_rules_target_idx',
+    );
+  });
 });

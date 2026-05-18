@@ -6,7 +6,7 @@ Public indexing, projection, diagnostics, and REST read API for IsoniaOS governa
 
 Active development target: v0.8 accountability and integration preview.
 
-Current package version is `0.8.0-alpha.1`. This wave adds a public archive/accountability read-model baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
+Current package version is `0.8.0-alpha.2`. This wave adds execution permission registry read models on top of the public archive/accountability baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
 
 This repository is part of the public IsoniaOS open-source core. It is intended to be self-hostable and inspectable by DAO operators, developers, design partners, and future integrators.
 
@@ -18,7 +18,7 @@ Smart contracts remain authoritative. Control Plane indexes chain events, stores
 
 If Control Plane state disagrees with chain state, chain state wins.
 
-Archive, accountability, decision-record, and external-resource endpoints are read models. External resources are evidence or context unless a future explicit model gives a source a narrower authority claim. Control Plane does not infer governance authority from arbitrary target-contract events.
+Archive, accountability, decision-record, execution-permission, and external-resource endpoints are read models. Execution target and selector rules are authoritative only because they are emitted by the configured IsoniaOS governance protocol contracts. External resources are evidence or context unless a future explicit model gives a source a narrower authority claim. Control Plane does not infer governance authority from arbitrary target-contract events.
 
 The public App Core may display transaction controls, but those controls are UI hints. Contract authorization and execution rules remain final.
 
@@ -127,7 +127,7 @@ This package consumes shared DTOs and enums through the pinned v0.8 compatibilit
 ```json
 {
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.1"
+    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.2"
   }
 }
 ```
@@ -180,6 +180,27 @@ Executed and cancelled governance proposals materialize accountability records f
 
 Control Plane does not hardcode customer or demo-specific ABIs, does not index customer target contracts globally, and does not infer governance authority from arbitrary target-contract events. Future decoding should be modeled as optional ABI/action metadata or an explicit provider adapter.
 
+## v0.8 Execution Permission Registry
+
+Control Plane indexes the v0.8 IsoniaOS governance protocol events:
+
+```txt
+ExecutionTargetRuleUpdated
+ExecutionSelectorRuleUpdated
+```
+
+These events materialize org-scoped execution target and selector rules in `execution_target_rules` and `execution_selector_rules`. The read endpoint is:
+
+```txt
+GET /v1/orgs/:orgId/execution-permissions
+```
+
+The endpoint returns shared `OrganizationExecutionPermissionsDto` data from `@isonia/types`.
+
+Route explanation uses the registry only when capability evidence says it is supported by explicit deployment capabilities or the configured current protocol profile plus `GOV_PROPOSALS_ADDRESS`. If a supported registry has no enabled target rule, route explanation reports `execution_target_not_allowed`. If the proposal value exceeds the target max value, it reports `execution_value_limit_exceeded`. If selector rules exist but only the proposal calldata hash is available, it reports `execution_calldata_unavailable` rather than guessing.
+
+This does not add arbitrary customer contract indexing, DemoTarget decoding, ABI-based action decoding, provider APIs, write endpoints, SaaS behavior, or external provider integrations.
+
 ## Indexer Configuration
 
 ```txt
@@ -188,7 +209,7 @@ RPC_URL=http://127.0.0.1:8545
 GOV_CORE_ADDRESS=0x...
 GOV_PROPOSALS_ADDRESS=0x...
 ISONIA_PROTOCOL_PROFILE=current
-ISONIA_DEPLOYMENT_CAPABILITIES_JSON={"activation":{"contractBatch":true},"finalization":{"organization":true}}
+ISONIA_DEPLOYMENT_CAPABILITIES_JSON={"activation":{"contractBatch":true},"finalization":{"organization":true},"execution":{"permissionRegistry":true}}
 START_BLOCK=0
 CONFIRMATIONS=0
 BLOCK_RANGE_SIZE=1000
@@ -200,7 +221,7 @@ CORS_CREDENTIALS=false
 
 Leave contract address variables blank until local contracts are deployed. The zero address is rejected so placeholder config cannot be mistaken for an indexed protocol deployment.
 
-`ISONIA_PROTOCOL_PROFILE=current` means the configured addresses are expected to point at the current IsoniaOS governance protocol implementation. `ISONIA_PROTOCOL_PROFILE=legacy` reports current typed activation/finalization capabilities as unsupported. `ISONIA_PROTOCOL_PROFILE=custom` is conservative and reports unknown unless `ISONIA_DEPLOYMENT_CAPABILITIES_JSON` supplies explicit capability statuses. Supported deployment capability values are `supported`, `unsupported`, `unknown`, `true`, and `false`.
+`ISONIA_PROTOCOL_PROFILE=current` means the configured addresses are expected to point at the current IsoniaOS governance protocol implementation. `ISONIA_PROTOCOL_PROFILE=legacy` reports current typed activation/finalization/execution-permission capabilities as unsupported. `ISONIA_PROTOCOL_PROFILE=custom` is conservative and reports unknown unless `ISONIA_DEPLOYMENT_CAPABILITIES_JSON` supplies explicit capability statuses. Supported deployment capability values are `supported`, `unsupported`, `unknown`, `true`, and `false`.
 
 REST API is exposed under `/v1`.
 
@@ -212,6 +233,7 @@ GET /v1/diagnostics/indexer
 GET /v1/capabilities
 GET /v1/orgs/:orgId/finalization
 GET /v1/orgs/:orgId/archive
+GET /v1/orgs/:orgId/execution-permissions
 ```
 
 The diagnostics response includes API version, configured chain and contract addresses, latest observed and safe blocks when RPC is available, indexer cursors, raw event counts, projection backlog/failures, the latest projection error summary, and stale data indicators.

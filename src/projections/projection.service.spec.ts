@@ -163,6 +163,70 @@ describe('ProjectionService', () => {
     expect(normalizeSql(organizationUpdate[0])).not.toContain('set status');
   });
 
+  it('upserts execution target rules idempotently by org and target', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      executionTargetRuleUpdatedEvent('1', { maxValue: '1000' }),
+      executionTargetRuleUpdatedEvent('2', { maxValue: '2000' }),
+    ]);
+
+    await expect(service.processBatch(2)).resolves.toBe(2);
+
+    const targetInserts = clientQuery.mock.calls.filter(([sql]) =>
+      normalizeSql(sql).includes('insert into execution_target_rules'),
+    );
+    expect(targetInserts).toHaveLength(2);
+    expect(
+      targetInserts.every(([sql]) =>
+        normalizeSql(sql).includes(
+          'on conflict (chain_id, org_id, target_address) do update',
+        ),
+      ),
+    ).toBe(true);
+    expect(targetInserts[1]?.[1]).toEqual([
+      '31337',
+      '1',
+      '0x0000000000000000000000000000000000000002',
+      true,
+      '2000',
+      '14',
+      '0xtx2',
+      2,
+      '0x0000000000000000000000000000000000000004',
+    ]);
+  });
+
+  it('upserts execution selector rules idempotently by org, target, and selector', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      executionSelectorRuleUpdatedEvent('1', { enabled: true }),
+      executionSelectorRuleUpdatedEvent('2', { enabled: false }),
+    ]);
+
+    await expect(service.processBatch(2)).resolves.toBe(2);
+
+    const selectorInserts = clientQuery.mock.calls.filter(([sql]) =>
+      normalizeSql(sql).includes('insert into execution_selector_rules'),
+    );
+    expect(selectorInserts).toHaveLength(2);
+    expect(
+      selectorInserts.every(([sql]) =>
+        normalizeSql(sql).includes(
+          'on conflict (chain_id, org_id, target_address, selector) do update',
+        ),
+      ),
+    ).toBe(true);
+    expect(selectorInserts[1]?.[1]).toEqual([
+      '31337',
+      '1',
+      '0x0000000000000000000000000000000000000002',
+      '0xa9059cbb',
+      false,
+      '15',
+      '0xtx2',
+      2,
+      '0x0000000000000000000000000000000000000004',
+    ]);
+  });
+
   it('keeps duplicate projection attempts idempotent through org-scoped upserts', async () => {
     const { service, clientQuery } = createProjectionHarness([
       proposalCreatedEvent('1'),
@@ -329,6 +393,52 @@ function organizationFinalizedEvent(id: string): TestRawEvent {
     args: {
       orgId: '1',
       admin: '0x000000000000000000000000000000000000000a',
+    },
+  };
+}
+
+function executionTargetRuleUpdatedEvent(
+  id: string,
+  overrides: { readonly enabled?: boolean; readonly maxValue?: string } = {},
+): TestRawEvent {
+  return {
+    id,
+    chain_id: '31337',
+    block_number: '14',
+    tx_hash: `0xtx${id}`,
+    log_index: Number(id),
+    event_name: GovernanceEventName.ExecutionTargetRuleUpdated,
+    status: DataStatus.Confirmed,
+    block_timestamp: '104',
+    args: {
+      orgId: '1',
+      targetAddress: '0x0000000000000000000000000000000000000002',
+      enabled: overrides.enabled ?? true,
+      maxValue: overrides.maxValue ?? '1000',
+      actorAddress: '0x0000000000000000000000000000000000000004',
+    },
+  };
+}
+
+function executionSelectorRuleUpdatedEvent(
+  id: string,
+  overrides: { readonly enabled?: boolean } = {},
+): TestRawEvent {
+  return {
+    id,
+    chain_id: '31337',
+    block_number: '15',
+    tx_hash: `0xtx${id}`,
+    log_index: Number(id),
+    event_name: GovernanceEventName.ExecutionSelectorRuleUpdated,
+    status: DataStatus.Confirmed,
+    block_timestamp: '105',
+    args: {
+      orgId: '1',
+      targetAddress: '0x0000000000000000000000000000000000000002',
+      selector: '0xa9059cbb',
+      enabled: overrides.enabled ?? true,
+      actorAddress: '0x0000000000000000000000000000000000000004',
     },
   };
 }

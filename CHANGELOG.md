@@ -6,6 +6,18 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added v0.8 execution permission registry indexing for `ExecutionTargetRuleUpdated` and `ExecutionSelectorRuleUpdated` IsoniaOS governance protocol events.
+- Added replayable `execution_target_rules` and `execution_selector_rules` read models with idempotent org-scoped upserts.
+- Added `GET /v1/orgs/:orgId/execution-permissions` returning the shared `OrganizationExecutionPermissionsDto` shape.
+- Added conservative route explanation blockers for supported execution permission registries: disallowed targets, value-limit violations, and unavailable selector calldata.
+
+### Changed
+
+- Updated the package version to `0.8.0-alpha.2` and pinned `@isonia/types` to `github:isoniaos/types#v0.8.0-alpha.2`.
+- Kept execution permission capability decisions tied to explicit deployment/profile/address evidence rather than package version strings.
+
 ## [0.8.0-alpha.1]
 
 ### Added

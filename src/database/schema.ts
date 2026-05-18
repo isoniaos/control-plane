@@ -141,6 +141,34 @@ create table if not exists current_policy_rules (
   primary key(chain_id, org_id, proposal_type)
 );
 
+create table if not exists execution_target_rules (
+  chain_id bigint not null,
+  org_id bigint not null,
+  target_address text not null,
+  enabled boolean not null,
+  max_value numeric not null,
+  updated_at_block_number bigint not null,
+  updated_at_tx_hash text not null,
+  updated_at_log_index integer not null,
+  updated_by_address text not null,
+  updated_at timestamptz not null default now(),
+  primary key(chain_id, org_id, target_address)
+);
+
+create table if not exists execution_selector_rules (
+  chain_id bigint not null,
+  org_id bigint not null,
+  target_address text not null,
+  selector text not null,
+  enabled boolean not null,
+  updated_at_block_number bigint not null,
+  updated_at_tx_hash text not null,
+  updated_at_log_index integer not null,
+  updated_by_address text not null,
+  updated_at timestamptz not null default now(),
+  primary key(chain_id, org_id, target_address, selector)
+);
+
 create table if not exists proposals (
   chain_id bigint not null,
   proposal_id bigint not null,
@@ -269,6 +297,8 @@ create index if not exists mandates_org_idx on mandates(chain_id, org_id);
 create index if not exists accountability_records_proposal_idx on accountability_records(chain_id, org_id, proposal_id);
 create index if not exists external_resources_proposal_idx on external_resources(chain_id, org_id, proposal_id);
 create index if not exists external_resources_accountability_idx on external_resources(chain_id, org_id, accountability_record_id);
+create index if not exists execution_target_rules_org_idx on execution_target_rules(chain_id, org_id);
+create index if not exists execution_selector_rules_target_idx on execution_selector_rules(chain_id, org_id, target_address);
 
 alter table organizations add column if not exists finalization_status text not null default 'unknown';
 alter table organizations add column if not exists finalized_admin_address text;
@@ -288,6 +318,12 @@ alter table roles add primary key (chain_id, org_id, role_id);
 
 alter table mandates drop constraint if exists mandates_pkey;
 alter table mandates add primary key (chain_id, org_id, mandate_id);
+
+alter table execution_target_rules drop constraint if exists execution_target_rules_pkey;
+alter table execution_target_rules add primary key (chain_id, org_id, target_address);
+
+alter table execution_selector_rules drop constraint if exists execution_selector_rules_pkey;
+alter table execution_selector_rules add primary key (chain_id, org_id, target_address, selector);
 
 alter table proposals drop constraint if exists proposals_pkey;
 alter table proposals add primary key (chain_id, org_id, proposal_id);

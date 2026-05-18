@@ -116,6 +116,28 @@ export const ISONIA_EVENT_ABI = [
   },
   {
     type: 'event',
+    name: 'ExecutionTargetRuleUpdated',
+    inputs: [
+      { name: 'orgId', type: 'uint64', indexed: true },
+      { name: 'target', type: 'address', indexed: true },
+      { name: 'enabled', type: 'bool', indexed: false },
+      { name: 'maxValue', type: 'uint256', indexed: false },
+      { name: 'actor', type: 'address', indexed: true },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'ExecutionSelectorRuleUpdated',
+    inputs: [
+      { name: 'orgId', type: 'uint64', indexed: true },
+      { name: 'target', type: 'address', indexed: true },
+      { name: 'selector', type: 'bytes4', indexed: false },
+      { name: 'enabled', type: 'bool', indexed: false },
+      { name: 'actor', type: 'address', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
     name: 'ProposalCreated',
     inputs: [
       { name: 'orgId', type: 'uint64', indexed: true },

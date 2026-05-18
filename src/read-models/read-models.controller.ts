@@ -7,6 +7,7 @@ import type {
   GovernanceGraphDto,
   MandateDto,
   OrganizationDto,
+  OrganizationExecutionPermissionsDto,
   OrganizationFinalizationReadModelDto,
   OrganizationOverviewDto,
   OrganizationPoliciesDto,
@@ -98,6 +99,13 @@ export class ReadModelsController {
   @Get('orgs/:orgId/policies')
   getPolicies(@Param('orgId') orgId: string): Promise<OrganizationPoliciesDto> {
     return this.readModels.getPolicies(orgId);
+  }
+
+  @Get('orgs/:orgId/execution-permissions')
+  getExecutionPermissions(
+    @Param('orgId') orgId: string,
+  ): Promise<OrganizationExecutionPermissionsDto> {
+    return this.readModels.getExecutionPermissions(orgId);
   }
 
   @Get('orgs/:orgId/proposals')

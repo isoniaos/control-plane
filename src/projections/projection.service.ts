@@ -224,6 +224,10 @@ export class ProjectionService {
         return this.mandateRevoked(client, event);
       case GovernanceEventName.PolicyRuleSet:
         return this.policyRuleSet(client, event);
+      case GovernanceEventName.ExecutionTargetRuleUpdated:
+        return this.executionTargetRuleUpdated(client, event);
+      case GovernanceEventName.ExecutionSelectorRuleUpdated:
+        return this.executionSelectorRuleUpdated(client, event);
       case GovernanceEventName.ProposalCreated:
         return this.proposalCreated(client, event);
       case GovernanceEventName.ProposalApproved:
@@ -639,6 +643,89 @@ export class ProjectionService {
         undefined,
       );
     }
+  }
+
+  private async executionTargetRuleUpdated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
+    await client.query(
+      `
+        insert into execution_target_rules (
+          chain_id,
+          org_id,
+          target_address,
+          enabled,
+          max_value,
+          updated_at_block_number,
+          updated_at_tx_hash,
+          updated_at_log_index,
+          updated_by_address,
+          updated_at
+        )
+        values ($1, $2, lower($3), $4, $5, $6, $7, $8, lower($9), now())
+        on conflict (chain_id, org_id, target_address) do update set
+          enabled = excluded.enabled,
+          max_value = excluded.max_value,
+          updated_at_block_number = excluded.updated_at_block_number,
+          updated_at_tx_hash = excluded.updated_at_tx_hash,
+          updated_at_log_index = excluded.updated_at_log_index,
+          updated_by_address = excluded.updated_by_address,
+          updated_at = now()
+      `,
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        arg(event.args, 'targetAddress', 'target'),
+        Boolean(arg(event.args, 'enabled')),
+        stringArg(event.args, 'maxValue'),
+        event.block_number,
+        event.tx_hash,
+        event.log_index,
+        arg(event.args, 'actorAddress', 'actor'),
+      ],
+    );
+  }
+
+  private async executionSelectorRuleUpdated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
+    await client.query(
+      `
+        insert into execution_selector_rules (
+          chain_id,
+          org_id,
+          target_address,
+          selector,
+          enabled,
+          updated_at_block_number,
+          updated_at_tx_hash,
+          updated_at_log_index,
+          updated_by_address,
+          updated_at
+        )
+        values ($1, $2, lower($3), lower($4), $5, $6, $7, $8, lower($9), now())
+        on conflict (chain_id, org_id, target_address, selector) do update set
+          enabled = excluded.enabled,
+          updated_at_block_number = excluded.updated_at_block_number,
+          updated_at_tx_hash = excluded.updated_at_tx_hash,
+          updated_at_log_index = excluded.updated_at_log_index,
+          updated_by_address = excluded.updated_by_address,
+          updated_at = now()
+      `,
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        arg(event.args, 'targetAddress', 'target'),
+        stringArg(event.args, 'selector'),
+        Boolean(arg(event.args, 'enabled')),
+        event.block_number,
+        event.tx_hash,
+        event.log_index,
+        arg(event.args, 'actorAddress', 'actor'),
+      ],
+    );
   }
 
   private async proposalCreated(

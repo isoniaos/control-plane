@@ -24,6 +24,7 @@ export type DeploymentCapabilityStatus =
 export interface DeploymentCapabilitiesConfig {
   readonly contractBatchActivation?: DeploymentCapabilityStatus;
   readonly organizationFinalization?: DeploymentCapabilityStatus;
+  readonly executionPermissionRegistry?: DeploymentCapabilityStatus;
 }
 
 export type RuntimeCapabilitySource =
@@ -87,18 +88,37 @@ export function parseDeploymentCapabilitiesJson(
     );
   }
 
-  return {
-    contractBatchActivation: readCapabilityStatus(value, [
-      ['contractBatchActivation'],
-      ['activation', 'contractBatch'],
-      ['activation', 'contractBatchActivation'],
-    ]),
-    organizationFinalization: readCapabilityStatus(value, [
-      ['organizationFinalization'],
-      ['finalization', 'organization'],
-      ['finalization', 'organizationFinalization'],
-    ]),
-  };
+  const capabilities: {
+    contractBatchActivation?: DeploymentCapabilityStatus;
+    organizationFinalization?: DeploymentCapabilityStatus;
+    executionPermissionRegistry?: DeploymentCapabilityStatus;
+  } = {};
+  const contractBatchActivation = readCapabilityStatus(value, [
+    ['contractBatchActivation'],
+    ['activation', 'contractBatch'],
+    ['activation', 'contractBatchActivation'],
+  ]);
+  if (contractBatchActivation) {
+    capabilities.contractBatchActivation = contractBatchActivation;
+  }
+  const organizationFinalization = readCapabilityStatus(value, [
+    ['organizationFinalization'],
+    ['finalization', 'organization'],
+    ['finalization', 'organizationFinalization'],
+  ]);
+  if (organizationFinalization) {
+    capabilities.organizationFinalization = organizationFinalization;
+  }
+  const executionPermissionRegistry = readCapabilityStatus(value, [
+    ['executionPermissionRegistry'],
+    ['executionPermissions'],
+    ['execution', 'permissions'],
+    ['execution', 'permissionRegistry'],
+  ]);
+  if (executionPermissionRegistry) {
+    capabilities.executionPermissionRegistry = executionPermissionRegistry;
+  }
+  return capabilities;
 }
 
 export function deploymentCapabilitiesConfigured(
@@ -106,7 +126,8 @@ export function deploymentCapabilitiesConfigured(
 ): boolean {
   return Boolean(
     capabilities.contractBatchActivation ||
-    capabilities.organizationFinalization,
+    capabilities.organizationFinalization ||
+    capabilities.executionPermissionRegistry,
   );
 }
 
@@ -140,6 +161,25 @@ export function resolveOrganizationFinalizationCapability(
   }
 
   return resolveCurrentGovCoreCapability(input, 'Organization finalization');
+}
+
+export function resolveExecutionPermissionRegistryCapability(
+  input: CapabilityResolutionInput,
+): RuntimeCapabilityResolution {
+  const explicit = input.deploymentCapabilities.executionPermissionRegistry;
+  if (explicit) {
+    return {
+      status: explicit,
+      source: 'deployment_capabilities',
+      reason:
+        'Execution permission registry was resolved from explicit deployment capability metadata.',
+    };
+  }
+
+  return resolveCurrentGovProposalsCapability(
+    input,
+    'Execution permission registry',
+  );
 }
 
 export function toActivationCapabilityStatus(
@@ -192,6 +232,40 @@ function resolveCurrentGovCoreCapability(
       status: DEPLOYMENT_CAPABILITY_STATUSES.Unknown,
       source: 'contract_address_presence',
       reason: `${label} cannot be proven because GOV_CORE_ADDRESS is not configured.`,
+    };
+  }
+
+  return {
+    status: DEPLOYMENT_CAPABILITY_STATUSES.Unknown,
+    source: 'unknown',
+    reason: `${label} cannot be proven without deployment capabilities or a supported protocol profile.`,
+  };
+}
+
+function resolveCurrentGovProposalsCapability(
+  input: CapabilityResolutionInput,
+  label: string,
+): RuntimeCapabilityResolution {
+  if (input.protocolProfile === 'legacy') {
+    return {
+      status: DEPLOYMENT_CAPABILITY_STATUSES.Unsupported,
+      source: 'protocol_profile',
+      reason: `${label} is disabled by the configured legacy protocol profile.`,
+    };
+  }
+
+  if (input.protocolProfile === 'current') {
+    if (input.contracts.govProposalsAddress) {
+      return {
+        status: DEPLOYMENT_CAPABILITY_STATUSES.Supported,
+        source: 'contract_address_presence',
+        reason: `${label} is enabled by the current protocol profile and configured GovProposals address.`,
+      };
+    }
+    return {
+      status: DEPLOYMENT_CAPABILITY_STATUSES.Unknown,
+      source: 'contract_address_presence',
+      reason: `${label} cannot be proven because GOV_PROPOSALS_ADDRESS is not configured.`,
     };
   }
 
