@@ -91,4 +91,21 @@ describe('CONTROL_PLANE_SCHEMA_SQL', () => {
       'create index if not exists execution_selector_rules_target_idx',
     );
   });
+
+  it('adds v0.8 managed execution read models', () => {
+    expect(sql).toContain('create table if not exists org_executors');
+    expect(sql).toContain('executor_address text');
+    expect(sql).toContain('previous_executor_address text');
+    expect(sql).toContain('updated_by_address text');
+    expect(sql).toContain('raw_event_id bigint');
+    expect(sql).toContain(
+      'create table if not exists proposal_execution_receipts',
+    );
+    expect(sql).toContain('primary key(chain_id, org_id, proposal_id)');
+    expect(sql).toContain('execution_mode text not null');
+    expect(sql).toContain('managed_executor_address text');
+    expect(sql).toContain(
+      'create index if not exists proposal_execution_receipts_org_idx',
+    );
+  });
 });

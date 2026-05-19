@@ -14,13 +14,19 @@ All notable changes to `@isonia/control-plane` are documented here.
 - Added replayable `execution_target_rules` and `execution_selector_rules` read models with idempotent org-scoped upserts.
 - Added `GET /v1/orgs/:orgId/execution-permissions` returning the shared `OrganizationExecutionPermissionsDto` shape.
 - Added conservative route explanation blockers for supported execution permission registries: disallowed targets, value-limit violations, and unavailable selector calldata.
+- Added decoding and projection for the enriched canonical `ProposalExecuted` execution receipt emitted by `GovProposals`.
+- Added `org_executors` and `proposal_execution_receipts` read models for org-scoped managed execution configuration and canonical execution receipts.
+- Added `GET /v1/orgs/:orgId/managed-execution` returning the shared `OrganizationManagedExecutionDto` shape.
+- Added direct/managed execution receipt DTO mapping, with direct execution represented when `managedExecutor` is the zero address.
 
 ### Changed
 
 - Updated `ProposalDto` responses to expose the protocol-declared `actionSelector` when known.
+- Updated `ProposalDto` responses to include `ProposalExecutionReceiptDto` information when the canonical execution receipt is available.
 - Updated legacy selector behavior so missing proposal selectors remain explicit and conservative instead of being guessed from calldata hashes.
 - Documented that Control Plane does not decode arbitrary customer ABIs or infer authority from target-contract events; the protocol-declared selector is a read-model action hint while calldata hash verification remains authoritative for the execution payload.
-- Updated the package version to `0.8.0-alpha.3` and pinned `@isonia/types` to `github:isoniaos/types#v0.8.0-alpha.3`.
+- Documented that `ProposalExecuted` is the canonical core execution receipt for direct and managed execution; target-contract events remain evidence/context unless explicitly modeled by a future adapter.
+- Updated the package version to `0.8.0-alpha.4` and pinned `@isonia/types` to `github:isoniaos/types#v0.8.0-alpha.4`.
 - Kept execution permission capability decisions tied to explicit deployment/profile/address evidence rather than package version strings.
 
 ## [0.8.0-alpha.1]

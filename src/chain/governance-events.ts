@@ -17,6 +17,7 @@ import {
   type OrganizationFinalizedEventArgsDto,
   type OrganizationStatusChangedEventArgsDto,
   type OrganizationUpdatedEventArgsDto,
+  type OrgExecutorUpdatedEventArgsDto,
   ORGANIZATION_STATUS_CHAIN_MAP,
   OrganizationStatus,
   type PolicyRuleSetEventArgsDto,
@@ -191,6 +192,16 @@ export function normalizeDecodedGovernanceLog(
           actorAddress: asAddress(args.actor),
         } satisfies ExecutionSelectorRuleUpdatedEventArgsDto,
       };
+    case GovernanceEventName.OrgExecutorUpdated:
+      return {
+        eventName,
+        args: {
+          orgId: asString(args.orgId),
+          previousExecutorAddress: asAddress(args.previousExecutor),
+          newExecutorAddress: asAddress(args.newExecutor),
+          actorAddress: asAddress(args.actor),
+        } satisfies OrgExecutorUpdatedEventArgsDto,
+      };
     case GovernanceEventName.ProposalCreated:
       return {
         eventName,
@@ -245,7 +256,10 @@ export function normalizeDecodedGovernanceLog(
           proposalId: asString(args.proposalId),
           executorAddress: asAddress(args.executor),
           targetAddress: asAddress(args.target),
+          value: asString(args.value),
+          actionSelector: asBytes4Selector(args.actionSelector),
           dataHash: asBytes32Hash(args.dataHash),
+          managedExecutorAddress: asAddress(args.managedExecutor),
         } satisfies ProposalExecutedEventArgsDto,
       };
     case GovernanceEventName.ProposalCancelled:

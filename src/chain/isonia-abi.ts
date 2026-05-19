@@ -138,6 +138,16 @@ export const ISONIA_EVENT_ABI = [
   },
   {
     type: 'event',
+    name: 'OrgExecutorUpdated',
+    inputs: [
+      { name: 'orgId', type: 'uint64', indexed: true },
+      { name: 'previousExecutor', type: 'address', indexed: false },
+      { name: 'newExecutor', type: 'address', indexed: false },
+      { name: 'actor', type: 'address', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
     name: 'ProposalCreated',
     inputs: [
       { name: 'orgId', type: 'uint64', indexed: true },
@@ -190,7 +200,10 @@ export const ISONIA_EVENT_ABI = [
       { name: 'proposalId', type: 'uint64', indexed: true },
       { name: 'executor', type: 'address', indexed: true },
       { name: 'target', type: 'address', indexed: false },
+      { name: 'value', type: 'uint256', indexed: false },
+      { name: 'actionSelector', type: 'bytes4', indexed: false },
       { name: 'dataHash', type: 'bytes32', indexed: false },
+      { name: 'managedExecutor', type: 'address', indexed: false },
     ],
   },
   {

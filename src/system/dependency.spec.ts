@@ -9,13 +9,13 @@ import {
 } from '@isonia/types';
 
 describe('package dependencies', () => {
-  it('pins @isonia/types to v0.8.0-alpha.3', () => {
+  it('pins @isonia/types to v0.8.0-alpha.4', () => {
     const packageJson = JSON.parse(
       readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string> };
 
     expect(packageJson.dependencies?.['@isonia/types']).toBe(
-      'github:isoniaos/types#v0.8.0-alpha.3',
+      'github:isoniaos/types#v0.8.0-alpha.4',
     );
   });
 

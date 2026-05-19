@@ -169,6 +169,19 @@ create table if not exists execution_selector_rules (
   primary key(chain_id, org_id, target_address, selector)
 );
 
+create table if not exists org_executors (
+  chain_id bigint not null,
+  org_id bigint not null,
+  executor_address text,
+  previous_executor_address text,
+  updated_by_address text,
+  updated_tx_hash text,
+  updated_block_number bigint,
+  updated_at timestamptz,
+  raw_event_id bigint,
+  primary key(chain_id, org_id)
+);
+
 create table if not exists proposals (
   chain_id bigint not null,
   proposal_id bigint not null,
@@ -193,6 +206,24 @@ create table if not exists proposals (
   data_status text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  primary key(chain_id, org_id, proposal_id)
+);
+
+create table if not exists proposal_execution_receipts (
+  chain_id bigint not null,
+  org_id bigint not null,
+  proposal_id bigint not null,
+  tx_hash text not null,
+  block_number bigint not null,
+  executor_address text not null,
+  target_address text not null,
+  value numeric not null,
+  action_selector text not null,
+  data_hash text not null,
+  execution_mode text not null,
+  managed_executor_address text,
+  observed_at timestamptz not null default now(),
+  raw_event_id bigint,
   primary key(chain_id, org_id, proposal_id)
 );
 
@@ -300,6 +331,8 @@ create index if not exists external_resources_proposal_idx on external_resources
 create index if not exists external_resources_accountability_idx on external_resources(chain_id, org_id, accountability_record_id);
 create index if not exists execution_target_rules_org_idx on execution_target_rules(chain_id, org_id);
 create index if not exists execution_selector_rules_target_idx on execution_selector_rules(chain_id, org_id, target_address);
+create index if not exists org_executors_org_idx on org_executors(chain_id, org_id);
+create index if not exists proposal_execution_receipts_org_idx on proposal_execution_receipts(chain_id, org_id);
 
 alter table organizations add column if not exists finalization_status text not null default 'unknown';
 alter table organizations add column if not exists finalized_admin_address text;
@@ -326,9 +359,33 @@ alter table execution_target_rules add primary key (chain_id, org_id, target_add
 alter table execution_selector_rules drop constraint if exists execution_selector_rules_pkey;
 alter table execution_selector_rules add primary key (chain_id, org_id, target_address, selector);
 
+alter table org_executors drop constraint if exists org_executors_pkey;
+alter table org_executors add column if not exists executor_address text;
+alter table org_executors add column if not exists previous_executor_address text;
+alter table org_executors add column if not exists updated_by_address text;
+alter table org_executors add column if not exists updated_tx_hash text;
+alter table org_executors add column if not exists updated_block_number bigint;
+alter table org_executors add column if not exists updated_at timestamptz;
+alter table org_executors add column if not exists raw_event_id bigint;
+alter table org_executors add primary key (chain_id, org_id);
+
 alter table proposals drop constraint if exists proposals_pkey;
 alter table proposals add column if not exists action_selector text;
 alter table proposals add primary key (chain_id, org_id, proposal_id);
+
+alter table proposal_execution_receipts drop constraint if exists proposal_execution_receipts_pkey;
+alter table proposal_execution_receipts add column if not exists tx_hash text;
+alter table proposal_execution_receipts add column if not exists block_number bigint;
+alter table proposal_execution_receipts add column if not exists executor_address text;
+alter table proposal_execution_receipts add column if not exists target_address text;
+alter table proposal_execution_receipts add column if not exists value numeric;
+alter table proposal_execution_receipts add column if not exists action_selector text;
+alter table proposal_execution_receipts add column if not exists data_hash text;
+alter table proposal_execution_receipts add column if not exists execution_mode text;
+alter table proposal_execution_receipts add column if not exists managed_executor_address text;
+alter table proposal_execution_receipts add column if not exists observed_at timestamptz not null default now();
+alter table proposal_execution_receipts add column if not exists raw_event_id bigint;
+alter table proposal_execution_receipts add primary key (chain_id, org_id, proposal_id);
 
 alter table proposal_decisions drop constraint if exists proposal_decisions_chain_id_proposal_id_body_id_decision_type_key;
 alter table proposal_decisions drop constraint if exists proposal_decisions_chain_id_proposal_id_body_id_decision_type_k;

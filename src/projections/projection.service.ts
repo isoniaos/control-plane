@@ -24,6 +24,7 @@ import {
   ObservedTransactionStatus,
   ORGANIZATION_FINALIZATION_STATUSES,
   OrganizationStatus,
+  ProposalExecutionMode,
   ProposalStatus,
 } from '@isonia/types';
 
@@ -228,6 +229,8 @@ export class ProjectionService {
         return this.executionTargetRuleUpdated(client, event);
       case GovernanceEventName.ExecutionSelectorRuleUpdated:
         return this.executionSelectorRuleUpdated(client, event);
+      case GovernanceEventName.OrgExecutorUpdated:
+        return this.orgExecutorUpdated(client, event);
       case GovernanceEventName.ProposalCreated:
         return this.proposalCreated(client, event);
       case GovernanceEventName.ProposalApproved:
@@ -728,6 +731,46 @@ export class ProjectionService {
     );
   }
 
+  private async orgExecutorUpdated(
+    client: PoolClient,
+    event: RawEventRow,
+  ): Promise<void> {
+    await client.query(
+      `
+        insert into org_executors (
+          chain_id,
+          org_id,
+          executor_address,
+          previous_executor_address,
+          updated_by_address,
+          updated_tx_hash,
+          updated_block_number,
+          updated_at,
+          raw_event_id
+        )
+        values ($1, $2, lower($3), lower($4), lower($5), $6, $7, now(), $8)
+        on conflict (chain_id, org_id) do update set
+          executor_address = excluded.executor_address,
+          previous_executor_address = excluded.previous_executor_address,
+          updated_by_address = excluded.updated_by_address,
+          updated_tx_hash = excluded.updated_tx_hash,
+          updated_block_number = excluded.updated_block_number,
+          updated_at = now(),
+          raw_event_id = excluded.raw_event_id
+      `,
+      [
+        event.chain_id,
+        stringArg(event.args, 'orgId'),
+        arg(event.args, 'newExecutorAddress', 'newExecutor'),
+        arg(event.args, 'previousExecutorAddress', 'previousExecutor'),
+        arg(event.args, 'actorAddress', 'actor'),
+        event.tx_hash,
+        event.block_number,
+        event.id,
+      ],
+    );
+  }
+
   private async proposalCreated(
     client: PoolClient,
     event: RawEventRow,
@@ -877,6 +920,7 @@ export class ProjectionService {
   ): Promise<void> {
     const orgId = stringArg(event.args, 'orgId');
     const proposalId = stringArg(event.args, 'proposalId');
+    const receipt = proposalExecutionReceipt(event);
     await client.query(
       `
         update proposals
@@ -893,6 +937,56 @@ export class ProjectionService {
         event.block_timestamp ?? '0',
       ],
     );
+    if (receipt) {
+      await client.query(
+        `
+          insert into proposal_execution_receipts (
+            chain_id,
+            org_id,
+            proposal_id,
+            tx_hash,
+            block_number,
+            executor_address,
+            target_address,
+            value,
+            action_selector,
+            data_hash,
+            execution_mode,
+            managed_executor_address,
+            observed_at,
+            raw_event_id
+          )
+          values ($1, $2, $3, $4, $5, lower($6), lower($7), $8, lower($9), $10, $11, lower($12), now(), $13)
+          on conflict (chain_id, org_id, proposal_id) do update set
+            tx_hash = excluded.tx_hash,
+            block_number = excluded.block_number,
+            executor_address = excluded.executor_address,
+            target_address = excluded.target_address,
+            value = excluded.value,
+            action_selector = excluded.action_selector,
+            data_hash = excluded.data_hash,
+            execution_mode = excluded.execution_mode,
+            managed_executor_address = excluded.managed_executor_address,
+            observed_at = now(),
+            raw_event_id = excluded.raw_event_id
+        `,
+        [
+          event.chain_id,
+          orgId,
+          proposalId,
+          event.tx_hash,
+          event.block_number,
+          receipt.executorAddress,
+          receipt.targetAddress,
+          receipt.value,
+          receipt.actionSelector,
+          receipt.dataHash,
+          receipt.executionMode,
+          receipt.managedExecutorAddress,
+          event.id,
+        ],
+      );
+    }
     await this.upsertAccountabilityRecord(
       client,
       event,
@@ -904,12 +998,8 @@ export class ProjectionService {
         linkedObservedStatus: ObservedTransactionStatus.Confirmed,
         targetAddress: stringArg(event.args, 'targetAddress', 'target'),
         calldataHash: stringArg(event.args, 'dataHash'),
-        value: await this.getProposalValue(
-          client,
-          event.chain_id,
-          orgId,
-          proposalId,
-        ),
+        functionSelector: receipt?.actionSelector,
+        value: receipt?.value,
         sourceDisclosure: sourceDisclosure(
           ExternalSourceLabel.OnchainTransaction,
           ExternalAuthorityClaim.ContractAuthoritative,
@@ -1028,24 +1118,6 @@ export class ProjectionService {
     );
   }
 
-  private async getProposalValue(
-    client: PoolClient,
-    chainId: string,
-    orgId: string,
-    proposalId: string,
-  ): Promise<string | undefined> {
-    const result = await client.query<{ value: string }>(
-      `
-        select value
-        from proposals
-        where chain_id = $1 and org_id = $2 and proposal_id = $3
-        limit 1
-      `,
-      [chainId, orgId, proposalId],
-    );
-    return result.rows[0]?.value;
-  }
-
   private async proposalStatusChanged(
     client: PoolClient,
     event: RawEventRow,
@@ -1131,6 +1203,47 @@ function optionalStringArg(
 ): string | null {
   const value = args[key] ?? (legacyKey ? args[legacyKey] : undefined);
   return value === undefined || value === null ? null : asString(value);
+}
+
+function proposalExecutionReceipt(event: RawEventRow):
+  | {
+      readonly executorAddress: string;
+      readonly targetAddress: string;
+      readonly value: string;
+      readonly actionSelector: string;
+      readonly dataHash: string;
+      readonly executionMode: ProposalExecutionMode;
+      readonly managedExecutorAddress?: string;
+    }
+  | undefined {
+  const value = optionalStringArg(event.args, 'value');
+  const actionSelector = optionalStringArg(event.args, 'actionSelector');
+  const managedExecutorAddress = optionalStringArg(
+    event.args,
+    'managedExecutorAddress',
+    'managedExecutor',
+  );
+  if (!value || !actionSelector || !managedExecutorAddress) {
+    return undefined;
+  }
+
+  const normalizedManagedExecutor = managedExecutorAddress.toLowerCase();
+  const isDirect = isZeroAddress(normalizedManagedExecutor);
+  return {
+    executorAddress: stringArg(event.args, 'executorAddress', 'executor'),
+    targetAddress: stringArg(event.args, 'targetAddress', 'target'),
+    value,
+    actionSelector: actionSelector.toLowerCase(),
+    dataHash: stringArg(event.args, 'dataHash'),
+    executionMode: isDirect
+      ? ProposalExecutionMode.Direct
+      : ProposalExecutionMode.Managed,
+    managedExecutorAddress: isDirect ? undefined : normalizedManagedExecutor,
+  };
+}
+
+function isZeroAddress(value: string): boolean {
+  return value.toLowerCase() === '0x0000000000000000000000000000000000000000';
 }
 
 function accountabilityRecordId(

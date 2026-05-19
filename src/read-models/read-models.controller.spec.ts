@@ -26,4 +26,26 @@ describe('ReadModelsController', () => {
     );
     expect(getExecutionPermissions).toHaveBeenCalledWith('1');
   });
+
+  it('returns organization managed execution from the read-model service', async () => {
+    const managedExecution = {
+      orgId: '1',
+      executor: {
+        orgId: '1',
+        executorAddress: '0x0000000000000000000000000000000000000005',
+      },
+    };
+    const getManagedExecution = jest.fn(() =>
+      Promise.resolve(managedExecution),
+    );
+    const service = {
+      getManagedExecution,
+    } as unknown as ReadModelsService;
+    const controller = new ReadModelsController(service);
+
+    await expect(controller.getManagedExecution('1')).resolves.toBe(
+      managedExecution,
+    );
+    expect(getManagedExecution).toHaveBeenCalledWith('1');
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@isonia/control-plane",
-  "version": "0.8.0-alpha.3",
+  "version": "0.8.0-alpha.4",
   "description": "Public IsoniaOS Control Plane for governance indexing, projections, diagnostics, and REST read APIs",
   "author": "IsoniaOS Team <info@isonia.org>",
   "license": "MIT",
@@ -29,7 +29,7 @@
     "replay": "pnpm projections:rebuild"
   },
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.3",
+    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",

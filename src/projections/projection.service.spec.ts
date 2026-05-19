@@ -6,6 +6,7 @@ import {
   ObservedTransactionStatus,
   ORGANIZATION_FINALIZATION_STATUSES,
   ProposalStatus,
+  ProposalExecutionMode,
   ProposalType,
 } from '@isonia/types';
 import { PoolClient, QueryResult, QueryResultRow } from 'pg';
@@ -144,6 +145,7 @@ describe('ProjectionService', () => {
         '0xtx1',
         ObservedTransactionStatus.Confirmed,
         '0x0000000000000000000000000000000000000002',
+        '0xa9059cbb',
         '0x0000000000000000000000000000000000000000000000000000000000000000',
         '0',
       ]),
@@ -151,6 +153,105 @@ describe('ProjectionService', () => {
     expect(String(accountabilityInsert[1][14])).toContain(
       'target contracts are not decoded',
     );
+  });
+
+  it('upserts org executor configuration and preserves zero-address clears', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      orgExecutorUpdatedEvent('1'),
+      orgExecutorUpdatedEvent('2', {
+        previousExecutorAddress: '0x0000000000000000000000000000000000000005',
+        newExecutorAddress: '0x0000000000000000000000000000000000000000',
+      }),
+    ]);
+
+    await expect(service.processBatch(2)).resolves.toBe(2);
+
+    const executorInserts = clientQuery.mock.calls.filter(([sql]) =>
+      normalizeSql(sql).includes('insert into org_executors'),
+    );
+    expect(executorInserts).toHaveLength(2);
+    expect(
+      normalizeSql(executorInserts[0]?.[0]).includes(
+        'on conflict (chain_id, org_id) do update',
+      ),
+    ).toBe(true);
+    expect(executorInserts[1]?.[1]).toEqual([
+      '31337',
+      '1',
+      '0x0000000000000000000000000000000000000000',
+      '0x0000000000000000000000000000000000000005',
+      '0x0000000000000000000000000000000000000004',
+      '0xtx2',
+      '16',
+      '2',
+    ]);
+  });
+
+  it('projects a direct canonical proposal execution receipt', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      proposalExecutedEvent('1'),
+    ]);
+
+    await expect(service.processBatch(1)).resolves.toBe(1);
+
+    const receiptInsert = findSqlCall(
+      clientQuery,
+      'insert into proposal_execution_receipts',
+    );
+    expect(receiptInsert[1]).toEqual([
+      '31337',
+      '1',
+      '42',
+      '0xtx1',
+      '12',
+      '0x0000000000000000000000000000000000000004',
+      '0x0000000000000000000000000000000000000002',
+      '0',
+      '0xa9059cbb',
+      '0x0000000000000000000000000000000000000000000000000000000000000000',
+      ProposalExecutionMode.Direct,
+      undefined,
+      '1',
+    ]);
+  });
+
+  it('projects a managed canonical proposal execution receipt', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      proposalExecutedEvent('1', {
+        managedExecutorAddress: '0x0000000000000000000000000000000000000005',
+      }),
+    ]);
+
+    await expect(service.processBatch(1)).resolves.toBe(1);
+
+    const receiptInsert = findSqlCall(
+      clientQuery,
+      'insert into proposal_execution_receipts',
+    );
+    expect(receiptInsert[1][10]).toBe(ProposalExecutionMode.Managed);
+    expect(receiptInsert[1][11]).toBe(
+      '0x0000000000000000000000000000000000000005',
+    );
+  });
+
+  it('keeps legacy ProposalExecuted projection conservative without inferring receipt fields', async () => {
+    const { service, clientQuery } = createProjectionHarness([
+      legacyProposalExecutedEvent('1'),
+    ]);
+
+    await expect(service.processBatch(1)).resolves.toBe(1);
+
+    expect(
+      clientQuery.mock.calls.some(([sql]) =>
+        normalizeSql(sql).includes('insert into proposal_execution_receipts'),
+      ),
+    ).toBe(false);
+    const accountabilityInsert = findSqlCall(
+      clientQuery,
+      'insert into accountability_records',
+    );
+    expect(accountabilityInsert[1][10]).toBeUndefined();
+    expect(accountabilityInsert[1][12]).toBeUndefined();
   });
 
   it('projects OrganizationFinalized without changing organization active status', async () => {
@@ -382,7 +483,11 @@ function proposalStatusChangedEvent(id: string): TestRawEvent {
 
 function proposalExecutedEvent(
   id: string,
-  overrides: { readonly txHash?: string; readonly logIndex?: number } = {},
+  overrides: {
+    readonly txHash?: string;
+    readonly logIndex?: number;
+    readonly managedExecutorAddress?: string;
+  } = {},
 ): TestRawEvent {
   return {
     id,
@@ -398,8 +503,54 @@ function proposalExecutedEvent(
       proposalId: '42',
       executorAddress: '0x0000000000000000000000000000000000000004',
       targetAddress: '0x0000000000000000000000000000000000000002',
+      value: '0',
+      actionSelector: '0xa9059cbb',
       dataHash:
         '0x0000000000000000000000000000000000000000000000000000000000000000',
+      managedExecutorAddress:
+        overrides.managedExecutorAddress ??
+        '0x0000000000000000000000000000000000000000',
+    },
+  };
+}
+
+function legacyProposalExecutedEvent(id: string): TestRawEvent {
+  const event = proposalExecutedEvent(id);
+  const { value, actionSelector, managedExecutorAddress, ...args } = event.args;
+  void value;
+  void actionSelector;
+  void managedExecutorAddress;
+  return {
+    ...event,
+    args,
+  };
+}
+
+function orgExecutorUpdatedEvent(
+  id: string,
+  overrides: {
+    readonly previousExecutorAddress?: string;
+    readonly newExecutorAddress?: string;
+  } = {},
+): TestRawEvent {
+  return {
+    id,
+    chain_id: '31337',
+    block_number: '16',
+    tx_hash: `0xtx${id}`,
+    log_index: Number(id),
+    event_name: GovernanceEventName.OrgExecutorUpdated,
+    status: DataStatus.Confirmed,
+    block_timestamp: '106',
+    args: {
+      orgId: '1',
+      previousExecutorAddress:
+        overrides.previousExecutorAddress ??
+        '0x0000000000000000000000000000000000000000',
+      newExecutorAddress:
+        overrides.newExecutorAddress ??
+        '0x0000000000000000000000000000000000000005',
+      actorAddress: '0x0000000000000000000000000000000000000004',
     },
   };
 }

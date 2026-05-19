@@ -106,6 +106,28 @@ describe('governance event decoding', () => {
     expect(selectorTopics).toHaveLength(3);
   });
 
+  it('normalizes OrgExecutorUpdated event args', () => {
+    const decoded = normalizeDecodedGovernanceLog(
+      GovernanceEventName.OrgExecutorUpdated,
+      {
+        orgId: 1n,
+        previousExecutor: '0x00000000000000000000000000000000000000AA',
+        newExecutor: '0x00000000000000000000000000000000000000BB',
+        actor: '0x00000000000000000000000000000000000000CC',
+      },
+    );
+
+    expect(decoded).toEqual({
+      eventName: GovernanceEventName.OrgExecutorUpdated,
+      args: {
+        orgId: '1',
+        previousExecutorAddress: '0x00000000000000000000000000000000000000aa',
+        newExecutorAddress: '0x00000000000000000000000000000000000000bb',
+        actorAddress: '0x00000000000000000000000000000000000000cc',
+      },
+    });
+  });
+
   it('normalizes ProposalCreated event args with actionSelector', () => {
     const decoded = normalizeDecodedGovernanceLog(
       GovernanceEventName.ProposalCreated,
@@ -158,6 +180,64 @@ describe('governance event decoding', () => {
       'actionSelector',
       'dataHash',
       'metadataURI',
+    ]);
+  });
+
+  it('normalizes enriched ProposalExecuted event args', () => {
+    const decoded = normalizeDecodedGovernanceLog(
+      GovernanceEventName.ProposalExecuted,
+      {
+        orgId: 1n,
+        proposalId: 42n,
+        executor: '0x00000000000000000000000000000000000000AA',
+        target: '0x00000000000000000000000000000000000000BB',
+        value: 1000n,
+        actionSelector: '0xA9059CBB',
+        dataHash:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+        managedExecutor: '0x00000000000000000000000000000000000000CC',
+      },
+    );
+
+    expect(decoded).toEqual({
+      eventName: GovernanceEventName.ProposalExecuted,
+      args: {
+        orgId: '1',
+        proposalId: '42',
+        executorAddress: '0x00000000000000000000000000000000000000aa',
+        targetAddress: '0x00000000000000000000000000000000000000bb',
+        value: '1000',
+        actionSelector: '0xa9059cbb',
+        dataHash:
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+        managedExecutorAddress: '0x00000000000000000000000000000000000000cc',
+      },
+    });
+  });
+
+  it('includes enriched ProposalExecuted and OrgExecutorUpdated in the indexed ABI shape', () => {
+    const proposalExecuted = ISONIA_EVENT_ABI.find(
+      (entry) => entry.name === 'ProposalExecuted',
+    );
+    const orgExecutorUpdated = ISONIA_EVENT_ABI.find(
+      (entry) => entry.name === 'OrgExecutorUpdated',
+    );
+
+    expect(proposalExecuted?.inputs.map((input) => input.name)).toEqual([
+      'orgId',
+      'proposalId',
+      'executor',
+      'target',
+      'value',
+      'actionSelector',
+      'dataHash',
+      'managedExecutor',
+    ]);
+    expect(orgExecutorUpdated?.inputs.map((input) => input.name)).toEqual([
+      'orgId',
+      'previousExecutor',
+      'newExecutor',
+      'actor',
     ]);
   });
 

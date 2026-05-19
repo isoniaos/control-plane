@@ -12,6 +12,7 @@ import {
   ORGANIZATION_LIFECYCLE_STATUSES,
   OrganizationStatus,
   POST_FINALIZATION_BLOCKED_BOOTSTRAP_ADMIN_OPERATIONS,
+  ProposalExecutionMode,
   ProposalStatus,
   ProposalType,
   RouteBlockedReasonCode,
@@ -164,6 +165,44 @@ describe('ReadModelsService', () => {
       'where chain_id = $1 and org_id = $2',
     );
     expect(selectorCall?.[1]).toEqual([31337, '1; drop table organizations;']);
+  });
+
+  it('returns managed execution config and hides zero-address active executors', async () => {
+    const { service } = createManagedExecutionService({
+      orgId: '1',
+      executorAddress: '0x0000000000000000000000000000000000000000',
+      previousExecutorAddress: '0x0000000000000000000000000000000000000005',
+      updatedByAddress: '0x0000000000000000000000000000000000000004',
+      transactionHash: '0xupdated',
+      blockNumber: '16',
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    await expect(service.getManagedExecution('1')).resolves.toEqual({
+      orgId: '1',
+      executor: {
+        orgId: '1',
+        previousExecutorAddress: '0x0000000000000000000000000000000000000005',
+        updatedByAddress: '0x0000000000000000000000000000000000000004',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        transactionHash: '0xupdated',
+        blockNumber: '16',
+      },
+    });
+  });
+
+  it('keeps managed execution query parameters bound', async () => {
+    const { service, query } = createManagedExecutionService(undefined);
+
+    await service.getManagedExecution('1; drop table organizations;');
+
+    expect(normalizeSql(query.mock.calls[0]?.[0])).toContain(
+      'where chain_id = $1 and org_id = $2',
+    );
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      31337,
+      '1; drop table organizations;',
+    ]);
   });
 
   it('reports a missing policy snapshot in proposal route explanations', async () => {
@@ -450,6 +489,19 @@ describe('ReadModelsService', () => {
             createdTxHash: '0xtx',
             createdAtChain: '100',
             dataStatus: DataStatus.Confirmed,
+            receiptExecutorAddress:
+              '0x0000000000000000000000000000000000000004',
+            receiptTargetAddress: '0x0000000000000000000000000000000000000002',
+            receiptValue: '0',
+            receiptActionSelector: '0xa9059cbb',
+            receiptDataHash:
+              '0x0000000000000000000000000000000000000000000000000000000000000000',
+            receiptExecutionMode: ProposalExecutionMode.Managed,
+            receiptManagedExecutorAddress:
+              '0x0000000000000000000000000000000000000005',
+            receiptTransactionHash: '0xexecuted',
+            receiptBlockNumber: '12',
+            receiptObservedAt: new Date('2026-01-01T00:00:00.000Z'),
           },
         ],
       });
@@ -461,9 +513,29 @@ describe('ReadModelsService', () => {
     const proposalDto = await service.getProposal('1', '42');
 
     expect(proposalDto?.actionSelector).toBe('0xa9059cbb');
+    expect(proposalDto?.executionMode).toBe(ProposalExecutionMode.Managed);
+    expect(proposalDto?.managedExecutorAddress).toBe(
+      '0x0000000000000000000000000000000000000005',
+    );
+    expect(proposalDto?.executionReceipt).toEqual({
+      orgId: '1',
+      proposalId: '42',
+      executorAddress: '0x0000000000000000000000000000000000000004',
+      targetAddress: '0x0000000000000000000000000000000000000002',
+      value: '0',
+      actionSelector: '0xa9059cbb',
+      dataHash:
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+      executionMode: ProposalExecutionMode.Managed,
+      managedExecutorAddress: '0x0000000000000000000000000000000000000005',
+      transactionHash: '0xexecuted',
+      blockNumber: '12',
+      observedAt: '2026-01-01T00:00:00.000Z',
+    });
     expect(normalizeSql(query.mock.calls[0]?.[0])).toContain(
       'action_selector as "actionselector"',
     );
+    expect(query.mock.calls[0]?.[1]).toEqual([31337, '1', '42']);
   });
 
   it('returns finalization read metadata for finalized active organizations', async () => {
@@ -767,6 +839,28 @@ function createExecutionPermissionsService(): {
       });
     }
     return Promise.resolve({ rows: [] });
+  });
+  const db = { query } as unknown as DatabaseService;
+  const config = {
+    chainId: 31337,
+    deploymentCapabilities: {},
+    contracts: {},
+  } as unknown as AppConfigService;
+  return { service: new ReadModelsService(db, config), query };
+}
+
+function createManagedExecutionService(
+  row: Record<string, unknown> | undefined,
+): {
+  service: ReadModelsService;
+  query: QueryMock;
+} {
+  const query: QueryMock = jest.fn((sql: string, params?: unknown[]) => {
+    void sql;
+    void params;
+    return Promise.resolve({
+      rows: row ? [row] : [],
+    });
   });
   const db = { query } as unknown as DatabaseService;
   const config = {

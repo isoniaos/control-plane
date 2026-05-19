@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@isonia/types':
-        specifier: github:isoniaos/types#v0.8.0-alpha.3
-        version: https://codeload.github.com/isoniaos/types/tar.gz/b3fb23fe1a5bca80efef3b72d9006c3c5de27792
+        specifier: github:isoniaos/types#v0.8.0-alpha.4
+        version: https://codeload.github.com/isoniaos/types/tar.gz/1552de5617dff4e1ddeae19a1c2d6ada4acd7664
       '@nestjs/common':
         specifier: ^11.0.1
         version: 11.1.19(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -518,9 +518,9 @@ packages:
       '@types/node':
         optional: true
 
-  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/b3fb23fe1a5bca80efef3b72d9006c3c5de27792':
-    resolution: {tarball: https://codeload.github.com/isoniaos/types/tar.gz/b3fb23fe1a5bca80efef3b72d9006c3c5de27792}
-    version: 0.8.0-alpha.3
+  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/1552de5617dff4e1ddeae19a1c2d6ada4acd7664':
+    resolution: {tarball: https://codeload.github.com/isoniaos/types/tar.gz/1552de5617dff4e1ddeae19a1c2d6ada4acd7664}
+    version: 0.8.0-alpha.4
     engines: {node: '>=22'}
 
   '@istanbuljs/load-nyc-config@1.1.0':
@@ -3951,7 +3951,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.19.17
 
-  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/b3fb23fe1a5bca80efef3b72d9006c3c5de27792': {}
+  '@isonia/types@https://codeload.github.com/isoniaos/types/tar.gz/1552de5617dff4e1ddeae19a1c2d6ada4acd7664': {}
 
   '@istanbuljs/load-nyc-config@1.1.0':
     dependencies:

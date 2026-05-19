@@ -9,6 +9,7 @@ import type {
   OrganizationDto,
   OrganizationExecutionPermissionsDto,
   OrganizationFinalizationReadModelDto,
+  OrganizationManagedExecutionDto,
   OrganizationOverviewDto,
   OrganizationPoliciesDto,
   ProposalDto,
@@ -106,6 +107,13 @@ export class ReadModelsController {
     @Param('orgId') orgId: string,
   ): Promise<OrganizationExecutionPermissionsDto> {
     return this.readModels.getExecutionPermissions(orgId);
+  }
+
+  @Get('orgs/:orgId/managed-execution')
+  getManagedExecution(
+    @Param('orgId') orgId: string,
+  ): Promise<OrganizationManagedExecutionDto> {
+    return this.readModels.getManagedExecution(orgId);
   }
 
   @Get('orgs/:orgId/proposals')

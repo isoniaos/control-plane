@@ -6,6 +6,7 @@ import {
   ArchiveProposalDisplayState,
   type ArchiveProposalSummaryDto,
   type BodyDto,
+  DataStatus,
   type DecisionRecordDto,
   DecisionRecordResult,
   type ExecutionSelectorRuleDto,
@@ -29,11 +30,15 @@ import {
   type OrganizationDto,
   type OrganizationExecutionPermissionsDto,
   type OrganizationFinalizationReadModelDto,
+  type OrganizationManagedExecutionDto,
   type OrganizationOverviewCountsDto,
   type OrganizationOverviewDto,
   type OrganizationPoliciesDto,
   type OrganizationPolicyDto,
   ObservedTransactionStatus,
+  type OrgExecutorDto,
+  type ProposalExecutionReceiptDto,
+  ProposalExecutionMode,
   type ProposalDto,
   type ProposalRouteExplanationDto,
   type ProposalSummaryDto,
@@ -267,6 +272,51 @@ interface ExecutionRouteTargetRuleRow {
   readonly selector_rule_count: number | string;
   readonly selector_enabled: boolean | null;
 }
+
+interface OrgExecutorRow {
+  readonly orgId: string;
+  readonly executorAddress: Address | null;
+  readonly previousExecutorAddress: Address | null;
+  readonly updatedByAddress: Address | null;
+  readonly transactionHash: TransactionHash | null;
+  readonly blockNumber: NumericString | null;
+  readonly updatedAt: Date | string | null;
+}
+
+interface ProposalReadRow {
+  readonly chainId: number;
+  readonly orgId: string;
+  readonly proposalId: string;
+  readonly proposalType: ProposalType;
+  readonly policyVersion: string;
+  readonly title: string;
+  readonly descriptionUri: string | null;
+  readonly targetAddress: Address | null;
+  readonly value: string;
+  readonly actionSelector: string | null;
+  readonly dataHash: string | null;
+  readonly creatorAddress: Address;
+  readonly status: ProposalStatus;
+  readonly createdBlock: NumericString;
+  readonly createdTxHash: TransactionHash;
+  readonly createdAtChain: NumericString;
+  readonly queuedAtChain: NumericString | null;
+  readonly executableAtChain: NumericString | null;
+  readonly executedAtChain: NumericString | null;
+  readonly dataStatus: DataStatus | null;
+  readonly receiptExecutorAddress: Address | null;
+  readonly receiptTargetAddress: Address | null;
+  readonly receiptValue: string | null;
+  readonly receiptActionSelector: string | null;
+  readonly receiptDataHash: string | null;
+  readonly receiptExecutionMode: ProposalExecutionMode | null;
+  readonly receiptManagedExecutorAddress: Address | null;
+  readonly receiptTransactionHash: TransactionHash | null;
+  readonly receiptBlockNumber: NumericString | null;
+  readonly receiptObservedAt: Date | string | null;
+}
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 @Injectable()
 export class ReadModelsService {
@@ -633,6 +683,34 @@ export class ReadModelsService {
     };
   }
 
+  async getManagedExecution(
+    orgId: string,
+  ): Promise<OrganizationManagedExecutionDto> {
+    const result = await this.db.query<OrgExecutorRow>(
+      `
+        select org_id as "orgId",
+               executor_address as "executorAddress",
+               previous_executor_address as "previousExecutorAddress",
+               updated_by_address as "updatedByAddress",
+               updated_tx_hash as "transactionHash",
+               updated_block_number as "blockNumber",
+               updated_at as "updatedAt"
+        from org_executors
+        where chain_id = $1 and org_id = $2
+        limit 1
+      `,
+      [this.config.chainId, orgId],
+    );
+    const executor = result.rows[0]
+      ? toOrgExecutorDto(result.rows[0])
+      : undefined;
+
+    return normalizeRow<OrganizationManagedExecutionDto>({
+      orgId,
+      executor,
+    });
+  }
+
   async getProposals(
     orgId: string,
     limit = 100,
@@ -657,23 +735,49 @@ export class ReadModelsService {
     orgId: string,
     proposalId: string,
   ): Promise<ProposalDto | undefined> {
-    const result = await this.db.query(
+    const result = await this.db.query<ProposalReadRow>(
       `
-        select chain_id::int as "chainId", org_id as "orgId", proposal_id as "proposalId",
-               proposal_type as "proposalType", policy_version as "policyVersion", title,
-               description_uri as "descriptionUri", target_address as "targetAddress",
-               value, action_selector as "actionSelector", data_hash as "dataHash",
-               creator_address as "creatorAddress",
-               status, created_block as "createdBlock", created_tx_hash as "createdTxHash",
-               created_at_chain as "createdAtChain", queued_at_chain as "queuedAtChain",
-               executable_at_chain as "executableAtChain", executed_at_chain as "executedAtChain",
-               data_status as "dataStatus"
-        from proposals
-        where org_id = $1 and proposal_id = $2
+        select p.chain_id::int as "chainId",
+               p.org_id as "orgId",
+               p.proposal_id as "proposalId",
+               p.proposal_type as "proposalType",
+               p.policy_version as "policyVersion",
+               p.title,
+               p.description_uri as "descriptionUri",
+               p.target_address as "targetAddress",
+               p.value,
+               p.action_selector as "actionSelector",
+               p.data_hash as "dataHash",
+               p.creator_address as "creatorAddress",
+               p.status,
+               p.created_block as "createdBlock",
+               p.created_tx_hash as "createdTxHash",
+               p.created_at_chain as "createdAtChain",
+               p.queued_at_chain as "queuedAtChain",
+               p.executable_at_chain as "executableAtChain",
+               p.executed_at_chain as "executedAtChain",
+               p.data_status as "dataStatus",
+               r.executor_address as "receiptExecutorAddress",
+               r.target_address as "receiptTargetAddress",
+               r.value as "receiptValue",
+               r.action_selector as "receiptActionSelector",
+               r.data_hash as "receiptDataHash",
+               r.execution_mode as "receiptExecutionMode",
+               r.managed_executor_address as "receiptManagedExecutorAddress",
+               r.tx_hash as "receiptTransactionHash",
+               r.block_number as "receiptBlockNumber",
+               r.observed_at as "receiptObservedAt"
+        from proposals p
+        left join proposal_execution_receipts r
+          on r.chain_id = p.chain_id
+         and r.org_id = p.org_id
+         and r.proposal_id = p.proposal_id
+        where p.chain_id = $1 and p.org_id = $2 and p.proposal_id = $3
       `,
-      [orgId, proposalId],
+      [this.config.chainId, orgId, proposalId],
     );
-    return normalizeRows<ProposalDto>(result.rows)[0];
+    const row = result.rows[0];
+    return row ? toProposalDto(row) : undefined;
   }
 
   async getProposalRoute(
@@ -681,8 +785,8 @@ export class ReadModelsService {
     proposalId: string,
   ): Promise<ProposalRouteExplanationDto | undefined> {
     const proposalResult = await this.db.query<ProposalRouteRow>(
-      `select * from proposals where org_id = $1 and proposal_id = $2`,
-      [orgId, proposalId],
+      `select * from proposals where chain_id = $1 and org_id = $2 and proposal_id = $3`,
+      [this.config.chainId, orgId, proposalId],
     );
     const proposal = proposalResult.rows[0];
     if (!proposal) {
@@ -1541,6 +1645,88 @@ function toExecutionSelectorRule(
     updatedAtTxHash: row.updatedAtTxHash,
     updatedByAddress: row.updatedByAddress?.toLowerCase(),
   });
+}
+
+function toOrgExecutorDto(row: OrgExecutorRow): OrgExecutorDto {
+  return normalizeRow<OrgExecutorDto>({
+    orgId: row.orgId,
+    executorAddress: activeExecutorAddress(row.executorAddress),
+    previousExecutorAddress: activeExecutorAddress(row.previousExecutorAddress),
+    updatedByAddress: row.updatedByAddress?.toLowerCase(),
+    updatedAt: toIsoTimestamp(row.updatedAt),
+    transactionHash: row.transactionHash,
+    blockNumber: row.blockNumber,
+  });
+}
+
+function toProposalDto(row: ProposalReadRow): ProposalDto {
+  const executionReceipt = toProposalExecutionReceipt(row);
+  return normalizeRow<ProposalDto>({
+    chainId: row.chainId,
+    orgId: row.orgId,
+    proposalId: row.proposalId,
+    proposalType: row.proposalType,
+    policyVersion: row.policyVersion,
+    title: row.title,
+    descriptionUri: row.descriptionUri,
+    targetAddress: row.targetAddress,
+    value: row.value,
+    actionSelector: row.actionSelector,
+    dataHash: row.dataHash,
+    creatorAddress: row.creatorAddress,
+    status: row.status,
+    createdBlock: row.createdBlock,
+    createdTxHash: row.createdTxHash,
+    createdAtChain: row.createdAtChain,
+    queuedAtChain: row.queuedAtChain,
+    executableAtChain: row.executableAtChain,
+    executedAtChain: row.executedAtChain,
+    executionMode: executionReceipt?.executionMode,
+    managedExecutorAddress: executionReceipt?.managedExecutorAddress,
+    executionReceipt,
+    dataStatus: row.dataStatus,
+  });
+}
+
+function toProposalExecutionReceipt(
+  row: ProposalReadRow,
+): ProposalExecutionReceiptDto | undefined {
+  if (
+    !row.receiptExecutorAddress ||
+    !row.receiptTargetAddress ||
+    !row.receiptValue ||
+    !row.receiptActionSelector ||
+    !row.receiptDataHash ||
+    !row.receiptExecutionMode
+  ) {
+    return undefined;
+  }
+
+  return normalizeRow<ProposalExecutionReceiptDto>({
+    orgId: row.orgId,
+    proposalId: row.proposalId,
+    executorAddress: row.receiptExecutorAddress,
+    targetAddress: row.receiptTargetAddress,
+    value: row.receiptValue,
+    actionSelector: row.receiptActionSelector,
+    dataHash: row.receiptDataHash,
+    executionMode: row.receiptExecutionMode,
+    managedExecutorAddress: activeExecutorAddress(
+      row.receiptManagedExecutorAddress,
+    ),
+    transactionHash: row.receiptTransactionHash,
+    blockNumber: row.receiptBlockNumber,
+    observedAt: toIsoTimestamp(row.receiptObservedAt),
+  });
+}
+
+function activeExecutorAddress(
+  value: Address | null | undefined,
+): Address | undefined {
+  if (!value || value.toLowerCase() === ZERO_ADDRESS) {
+    return undefined;
+  }
+  return value.toLowerCase() as Address;
 }
 
 function isValueExceedingLimit(value: string, maxValue: string): boolean {

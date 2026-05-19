@@ -6,7 +6,7 @@ Public indexing, projection, diagnostics, and REST read API for IsoniaOS governa
 
 Active development target: v0.8 accountability and integration preview.
 
-Current package version is `0.8.0-alpha.3`. This wave adds selector-aware proposal action identity on top of the execution permission registry and public archive/accountability baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
+Current package version is `0.8.0-alpha.4`. This wave adds managed execution receipt indexing on top of selector-aware proposal action identity, the execution permission registry, and the public archive/accountability baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
 
 This repository is part of the public IsoniaOS open-source core. It is intended to be self-hostable and inspectable by DAO operators, developers, design partners, and future integrators.
 
@@ -20,7 +20,9 @@ If Control Plane state disagrees with chain state, chain state wins.
 
 Archive, accountability, decision-record, execution-permission, and external-resource endpoints are read models. Execution target and selector rules are authoritative only because they are emitted by the configured IsoniaOS governance protocol contracts. External resources are evidence or context unless a future explicit model gives a source a narrower authority claim. Control Plane does not infer governance authority from arbitrary target-contract events.
 
-Proposal action identity is indexed only from IsoniaOS protocol events. For v0.8.0-alpha.3 proposals, Control Plane stores the protocol-declared action selector alongside target address, value, and calldata hash. The selector is an action hint for read-model explanation and execution permission checks; full calldata hash verification remains authoritative for the execution payload.
+Proposal action identity is indexed only from IsoniaOS protocol events. Control Plane stores the protocol-declared action selector alongside target address, value, and calldata hash. The selector is an action hint for read-model explanation and execution permission checks; full calldata hash verification remains authoritative for the execution payload.
+
+`ProposalExecuted` from `GovProposals` is the canonical execution receipt for direct and managed execution. `OrgExecutorUpdated` is the org-scoped managed executor configuration event. Control Plane does not need to index arbitrary customer target contracts for core execution receipt correctness; target-contract events are evidence/context unless explicitly modeled by a future adapter.
 
 The public App Core may display transaction controls, but those controls are UI hints. Contract authorization and execution rules remain final.
 
@@ -129,7 +131,7 @@ This package consumes shared DTOs and enums through the pinned v0.8 compatibilit
 ```json
 {
   "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.3"
+    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.4"
   }
 }
 ```
@@ -182,6 +184,27 @@ Executed and cancelled governance proposals materialize accountability records f
 
 Control Plane does not hardcode customer or demo-specific ABIs, does not index customer target contracts globally, and does not infer governance authority from arbitrary target-contract events. Future decoding should be modeled as optional ABI/action metadata or an explicit provider adapter.
 
+## v0.8 Managed Execution
+
+Control Plane indexes the v0.8 IsoniaOS governance protocol events:
+
+```txt
+ProposalExecuted
+OrgExecutorUpdated
+```
+
+`ProposalExecuted` is the canonical execution receipt emitted by `GovProposals`. The `proposal_execution_receipts` read model stores the executor, final target, value, action selector, calldata hash, execution mode, managed executor when present, transaction hash, block number, and raw event reference. Direct execution is represented with `executionMode: "direct"` when `managedExecutor` is the zero address. Managed execution is represented with `executionMode: "managed"` and a non-zero `managedExecutorAddress`.
+
+`OrgExecutorUpdated` materializes the latest org-scoped managed executor configuration in `org_executors`. The REST endpoint is:
+
+```txt
+GET /v1/orgs/:orgId/managed-execution
+```
+
+The endpoint returns shared `OrganizationManagedExecutionDto` data from `@isonia/types`. A zero-address executor is retained in event history but omitted as an active executor in the high-level DTO.
+
+Control Plane does not dynamically index org executor contracts in this wave and does not index arbitrary customer target-contract events. `ManagedCallExecuted` or target-contract events may become supporting evidence later, but they are not required for the core execution receipt read model.
+
 ## v0.8 Execution Permission Registry
 
 Control Plane indexes the v0.8 IsoniaOS governance protocol events:
@@ -202,7 +225,7 @@ GET /v1/orgs/:orgId/execution-permissions
 
 The endpoint returns shared `OrganizationExecutionPermissionsDto` data from `@isonia/types`.
 
-Route explanation uses the registry only when capability evidence says it is supported by explicit deployment capabilities or the configured current protocol profile plus `GOV_PROPOSALS_ADDRESS`. If a supported registry has no enabled target rule, route explanation reports `execution_target_not_allowed`. If the proposal value exceeds the target max value, it reports `execution_value_limit_exceeded`. If selector rules exist and the proposal has a stored action selector, route explanation compares that selector to `execution_selector_rules` without requiring calldata. If selector rules exist but a legacy proposal row has no stored selector, it reports `execution_calldata_unavailable` rather than guessing.
+Route explanation uses the registry only when capability evidence says it is supported by explicit deployment capabilities or the configured current protocol profile plus `GOV_PROPOSALS_ADDRESS`. Final target permissions are checked against the proposal `targetAddress`, final selector permissions are checked against the proposal `actionSelector`, and value limits are checked against the proposal `value`. Org executor presence changes execution context but not final target permission semantics. If a supported registry has no enabled target rule, route explanation reports `execution_target_not_allowed`. If the proposal value exceeds the target max value, it reports `execution_value_limit_exceeded`. If selector rules exist and the proposal has a stored action selector, route explanation compares that selector to `execution_selector_rules` without requiring calldata. If selector rules exist but a legacy proposal row has no stored selector, it reports `execution_calldata_unavailable` rather than guessing.
 
 This does not add arbitrary customer contract indexing, DemoTarget decoding, ABI-based action decoding, provider APIs, write endpoints, SaaS behavior, or external provider integrations.
 
@@ -239,6 +262,7 @@ GET /v1/capabilities
 GET /v1/orgs/:orgId/finalization
 GET /v1/orgs/:orgId/archive
 GET /v1/orgs/:orgId/execution-permissions
+GET /v1/orgs/:orgId/managed-execution
 ```
 
 The diagnostics response includes API version, configured chain and contract addresses, latest observed and safe blocks when RPC is available, indexer cursors, raw event counts, projection backlog/failures, the latest projection error summary, and stale data indicators.
