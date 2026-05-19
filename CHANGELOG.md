@@ -6,6 +6,8 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+## [0.8.0-alpha.4]
+
 ### Added
 
 - Added selector-aware `ProposalCreated` decoding and proposal projection support for the v0.8.0-alpha.3 protocol action identity: target address, value, action selector, and calldata hash.
@@ -135,7 +137,8 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 - Initial NestJS/PostgreSQL/viem Control Plane with indexing, projections, REST read models, diagnostics, and local scripts.
 
-[Unreleased]: https://github.com/isoniaos/control-plane/compare/v0.8.0-alpha.1...HEAD
+[Unreleased]: https://github.com/isoniaos/control-plane/compare/v0.8.0-alpha.4...HEAD
+[0.8.0-alpha.4]: https://github.com/isoniaos/control-plane/releases/tag/v0.8.0-alpha.4
 [0.8.0-alpha.1]: https://github.com/isoniaos/control-plane/releases/tag/v0.8.0-alpha.1
 [0.7.0-alpha.2]: https://github.com/isoniaos/control-plane/releases/tag/v0.7.0-alpha.2
 [0.7.0-alpha.1]: https://github.com/isoniaos/control-plane/releases/tag/v0.7.0-alpha.1
