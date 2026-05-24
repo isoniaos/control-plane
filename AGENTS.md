@@ -2,6 +2,8 @@
 
 These rules apply to Codex and other AI agents working in `control-plane`.
 
+When this repository is used inside the IsoniaOS workspace, read the workspace-level `../AGENTS.md` first, then return to this file for repository-specific instructions.
+
 ## Repository Purpose
 
 `control-plane` is the IsoniaOS indexer, projector, explainer, diagnostics service, and REST read API.
