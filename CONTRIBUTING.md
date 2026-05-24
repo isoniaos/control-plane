@@ -13,7 +13,7 @@ Read these files first:
 - `SECURITY.md`
 - `CHANGELOG.md`
 
-The active development target is v0.6 alpha.
+During active development, use current workspace sources and the current repository roadmap context. Do not treat old alpha line notes as current behavior unless the current code and docs still support them.
 
 ## Architecture boundary
 
@@ -29,7 +29,7 @@ Do not add SaaS billing, subscriptions, usage metering, tenant management, platf
 
 Use:
 
-- Node.js 18 or newer;
+- Node.js 22 or newer;
 - Corepack with pnpm;
 - local PostgreSQL;
 - a local EVM node such as Hardhat when indexing local contracts.
@@ -79,7 +79,7 @@ Run the strongest relevant subset before handing work back:
     corepack pnpm build
     git diff --check
 
-Use `test:e2e` when API behavior changes. Use projection/indexer tests when event ingestion or replay behavior changes.
+Use `test:e2e` when API behavior changes. Use projection/indexer tests when event ingestion or replay behavior changes. The current `lint` script applies fixes, so check the resulting diff before handing work back.
 
 If a command is skipped, explain why. If an existing unrelated failure appears, report it separately.
 

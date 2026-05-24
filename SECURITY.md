@@ -20,7 +20,7 @@ The public App Core may display transaction controls, but those controls are UI 
 
 ## Supported versions
 
-During the alpha phase, only the active `main` branch and the latest explicitly announced alpha tag receive security attention.
+During active development, only the active `main` branch and the latest explicitly announced tag receive security attention.
 
 Historical `v0.1` and `v0.5` materials are archival unless maintainers explicitly reopen them for a compatibility or disclosure task.
 
@@ -55,11 +55,11 @@ Report issues such as:
 
 ## What is out of scope for security reports
 
-During alpha, the following are normally not treated as security vulnerabilities unless they create a concrete exploit path:
+During active development, the following are normally not treated as security vulnerabilities unless they create a concrete exploit path:
 
 - missing production deployment hardening;
 - performance limitations in local demo workflows;
-- incomplete v0.6 roadmap features;
+- incomplete current-roadmap features;
 - known lack of third-party audit;
 - failures caused by intentionally invalid local configuration;
 - issues in abandoned archival documentation that is clearly marked as historical.

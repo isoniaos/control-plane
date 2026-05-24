@@ -1,278 +1,98 @@
 # IsoniaOS Control Plane
 
-Public indexing, projection, diagnostics, and REST read API for IsoniaOS governance read models.
+Control Plane is the IsoniaOS indexing, projection, diagnostics, and REST read API service. It ingests configured EVM governance contract events, stores raw events, builds replayable read models, and exposes public read surfaces for organization state, proposals, routes, archives, accountability, external resources, capabilities, and diagnostics.
 
-## Status
+Control Plane is not governance authority. If a read model disagrees with modeled contract state, the modeled contract state wins. The public developer overview is in [site/developers/control-plane.md](https://github.com/isoniaos/docs/blob/main/site/developers/control-plane.md).
 
-Active development target: v0.8 accountability and integration preview.
+## Installation
 
-Current package version is `0.8.0-alpha.4`. This wave adds managed execution receipt indexing on top of selector-aware proposal action identity, the execution permission registry, and the public archive/accountability baseline while preserving the production authority model: contracts remain authoritative, and Control Plane remains an indexer, projector, explainer, and REST read API.
+Requires Node.js 22 or newer, pnpm through Corepack, and PostgreSQL.
 
-This repository is part of the public IsoniaOS open-source core. It is intended to be self-hostable and inspectable by DAO operators, developers, design partners, and future integrators.
-
-## Authority Model
-
-Control Plane is not a source of governance authority.
-
-Smart contracts remain authoritative. Control Plane indexes chain events, stores raw events durably, builds replayable read models, explains proposal routes from indexed policy snapshots, exposes diagnostics, and serves typed REST APIs for App Core and SDK consumers.
-
-If Control Plane state disagrees with chain state, chain state wins.
-
-Archive, accountability, decision-record, execution-permission, and external-resource endpoints are read models. Execution target and selector rules are authoritative only because they are emitted by the configured IsoniaOS governance protocol contracts. External resources are evidence or context unless a future explicit model gives a source a narrower authority claim. Control Plane does not infer governance authority from arbitrary target-contract events.
-
-Proposal action identity is indexed only from IsoniaOS protocol events. Control Plane stores the protocol-declared action selector alongside target address, value, and calldata hash. The selector is an action hint for read-model explanation and execution permission checks; full calldata hash verification remains authoritative for the execution payload.
-
-`ProposalExecuted` from `GovProposals` is the canonical execution receipt for direct and managed execution. `OrgExecutorUpdated` is the org-scoped managed executor configuration event. Control Plane does not need to index arbitrary customer target contracts for core execution receipt correctness; target-contract events are evidence/context unless explicitly modeled by a future adapter.
-
-The public App Core may display transaction controls, but those controls are UI hints. Contract authorization and execution rules remain final.
-
-## Repository Boundary
-
-In scope for this public repository:
-
-- poll local or configured EVM logs with `getLogs`;
-- store raw events durably before projection;
-- build replayable read models;
-- expose `/v1` REST endpoints using shared `@isonia/types` DTOs;
-- explain proposal routes from indexed policy snapshots;
-- expose diagnostics for API, chain, indexer, projection, and runtime heartbeat state;
-- support local development and self-hosted operation.
-
-Out of scope for this public repository:
-
-- SaaS billing;
-- subscription plans;
-- tenant management;
-- hosted-customer provisioning;
-- platform admin workflows;
-- private production deployment manifests;
-- real secrets or hosted credentials;
-- managed AI provider keys or private AI orchestration;
-- production audit or security-hardening claims.
-
-Future SaaS or Cloud functionality should live in a separate private repository unless a neutral self-hosted primitive is explicitly moved into the open-source core.
-
-## Security Status
-
-This is alpha software. It has not been independently audited and should not be used to secure production DAO treasuries, protocol upgrades, or legally binding governance processes without additional review.
-
-See `SECURITY.md` for vulnerability reporting, secret-handling rules, and disclosure expectations.
-
-## Scope
-
-- poll local EVM logs with `getLogs`;
-- store raw events durably before projection;
-- build replayable read models;
-- expose `/v1` REST endpoints using shared `@isonia/types` DTOs;
-- explain proposal routes from indexed policy snapshots.
-
-## Local Postgres
-
-Default local database settings:
-
-```txt
-PG_HOST=localhost
-PG_PORT=5432
-PG_DATABASE=control-plane
-PG_USER=postgres
-PG_PASSWORD=secret
+```bash
+corepack pnpm install
 ```
 
-`DATABASE_URL` can be used instead of the individual `PG_*` variables.
-Copy `.env.example` to `.env` for the full local configuration surface. The `.env` file is ignored by git.
+Copy or adapt [`.env.example`](.env.example) for local development.
 
-Application and worker scripts preload `dotenv/config` before bootstrapping Nest services, so local commands, one-shot indexer runs, projection workers, and Jest tests read the same `.env` values as `src/main.ts`.
+## Configuration
 
-## Commands
+Configuration is read by [`src/config/app-config.service.ts`](src/config/app-config.service.ts).
 
-```txt
-corepack pnpm install
+| Variable | Default / behavior |
+| --- | --- |
+| `NODE_ENV` | `development` |
+| `API_PORT` / `PORT` | API port, default `3000`; `API_PORT` wins |
+| `CHAIN_ID` | EVM chain ID, default `31337` |
+| `RPC_URL` / `RPC_HTTP_URL` | RPC endpoint, default `http://127.0.0.1:8545`; `RPC_URL` wins |
+| `GOV_CORE_ADDRESS` | Optional non-zero EVM address for `GovCore` |
+| `GOV_PROPOSALS_ADDRESS` | Optional non-zero EVM address for `GovProposals` |
+| `ISONIA_PROTOCOL_PROFILE` | Optional profile: `current`, `legacy`, or `custom` |
+| `ISONIA_DEPLOYMENT_CAPABILITIES_JSON` | Optional JSON object that overrides deployment capabilities |
+| `START_BLOCK` | Indexer start block, default `0` |
+| `CONFIRMATIONS` / `CONFIRMATION_DEPTH` | Confirmation depth, default `0`; `CONFIRMATIONS` wins |
+| `BLOCK_RANGE_SIZE` / `MAX_BLOCK_RANGE` | Indexer block range, default `1000`; `BLOCK_RANGE_SIZE` wins |
+| `POLL_INTERVAL_MS` | Indexer poll interval, default `5000` |
+| `DATABASE_URL` | Full PostgreSQL URL; overrides individual `PG_*` values |
+| `PG_HOST` | Default `localhost` |
+| `PG_PORT` | Default `5432` |
+| `PG_DATABASE` | Default `control-plane` |
+| `PG_USER` | Default `postgres` |
+| `PG_PASSWORD` | Default `secret` |
+| `CORS_ORIGINS` | Comma-separated origins, default `http://localhost:5173,http://127.0.0.1:5173` |
+| `CORS_CREDENTIALS` | Boolean, default `false` |
+
+Do not use package version strings as runtime capability evidence. Use configured contract addresses, profile/capability metadata, ABI/event compatibility, and observable chain state.
+
+## Run / Usage
+
+Create or update the database schema:
+
+```bash
 corepack pnpm db:migrate
+```
+
+Run the API:
+
+```bash
+corepack pnpm start
+```
+
+Run API, indexer, and projections together in development:
+
+```bash
 corepack pnpm dev
 ```
 
-`pnpm dev` starts the complete local Control Plane runtime:
+Run individual workers:
 
-- REST API;
-- continuous indexer;
-- continuous projection worker.
-
-Manual commands remain available for debugging, CI, and recovery:
-
-```txt
-corepack pnpm api:dev
-corepack pnpm indexer:once
+```bash
 corepack pnpm indexer:start
 corepack pnpm projections:start
-corepack pnpm projections:retry-failed
 corepack pnpm projections:rebuild
 ```
 
-`projections:retry-failed` clears failed projection markers for the configured `CHAIN_ID` and immediately attempts to process the requeued rows. Normal projection workers skip failed rows until this manual retry path or a full `projections:rebuild` is run.
+Build and test:
 
-## Verification
-
-Useful local checks:
-
-```txt
-corepack pnpm lint
+```bash
+corepack pnpm build
 corepack pnpm test
 corepack pnpm test:e2e
-corepack pnpm build
-git diff --check
 ```
 
-Use `test:e2e` when REST behavior changes.
+## Troubleshooting
 
-## Shared Package Dependency
+- Invalid `GOV_CORE_ADDRESS` or `GOV_PROPOSALS_ADDRESS` values fail startup; use full non-zero `0x` addresses.
+- If database connection fails, prefer one clear `DATABASE_URL` or verify all `PG_*` values together.
+- If browser calls fail, confirm `CORS_ORIGINS` includes the App Core origin.
+- If capability metadata is wrong or missing, check `ISONIA_PROTOCOL_PROFILE` and `ISONIA_DEPLOYMENT_CAPABILITIES_JSON`.
+- If read models look stale, check runtime heartbeats, projection errors, and whether `projections:rebuild` is needed after schema or projection changes.
 
-This package consumes shared DTOs and enums through the pinned v0.8 compatibility tag:
+## Contribution
 
-```json
-{
-  "dependencies": {
-    "@isonia/types": "github:isoniaos/types#v0.8.0-alpha.4"
-  }
-}
-```
+Read [`AGENTS.md`](AGENTS.md) before editing. Keep indexing deterministic, idempotent, transaction-safe, and replayable. Preserve raw events before projection and keep SQL parameterized or strictly whitelisted.
 
-Do not duplicate shared DTOs locally. Add shared domain types to `@isonia/types` first.
+Update the smallest relevant local docs and the public docs repository when API contracts, DB schema, indexing behavior, diagnostics, capability metadata, configuration, or authority boundaries affect users, developers, operators, or public claims.
 
-## v0.8 Capabilities
+## License
 
-Control Plane exposes activation capability metadata:
-
-```txt
-GET /v1/capabilities
-```
-
-The response reports serial activation as the fallback path. Contract-level typed batch activation and organization finalization are reported from deployment evidence: explicit deployment manifest capabilities, the configured protocol profile, and configured contract address presence. If Control Plane cannot prove a capability from that evidence, it reports `unknown` instead of deriving runtime behavior from package or release version strings. EIP-5792 remains unsupported/non-primary.
-
-Typed batch calls still emit granular domain events, so read-model recovery remains event-driven and equivalent to serial setup where the underlying contracts emit the existing per-item events.
-
-Old deployments are represented by Git tags, release artifacts, and deployment manifests. Compatibility metadata may be supplied through deployment capabilities, but active runtime capability reporting is not inferred from `@isonia/evm-contracts` package versions.
-
-## Bootstrap Finalization
-
-Control Plane can index the `OrganizationFinalized` event from configured governance protocol deployments and project organization finalization metadata for downstream clients:
-
-```txt
-GET /v1/orgs/:orgId/finalization
-```
-
-The read model reports whether finalization is supported, unknown, not finalized, or finalized, plus finalized admin, transaction, block, and chain timestamp metadata when the event is available. Finalized organizations remain active and readable. Post-finalization bootstrap admin restrictions are enforced by the contracts, not Control Plane.
-
-Emergency/recovery flows and governance-controlled post-finalization mutations are not implemented in this alpha. This software remains unaudited alpha infrastructure and should not be used as production governance authority.
-
-## v0.8 Archive And Accountability
-
-The v0.8 baseline exposes public archive/accountability read endpoints:
-
-```txt
-GET /v1/orgs/:orgId/archive
-GET /v1/orgs/:orgId/decision-records
-GET /v1/orgs/:orgId/proposals/:proposalId/decision-record
-GET /v1/orgs/:orgId/proposals/:proposalId/accountability
-GET /v1/orgs/:orgId/proposals/:proposalId/external-resources
-```
-
-The first v0.8 wave does not add server-side archive filters; clients can filter the returned archive summaries locally.
-
-Executed and cancelled governance proposals materialize accountability records from governance contract events. Executed proposals link to the observed transaction hash/status and generic proposal action metadata when available: target address, protocol-declared action selector, calldata hash, and value.
-
-`external_resources` is present as a durable read model for future import/fixture work. This task does not add provider API calls, importers, manual write endpoints, SaaS behavior, or UI.
-
-Control Plane does not hardcode customer or demo-specific ABIs, does not index customer target contracts globally, and does not infer governance authority from arbitrary target-contract events. Future decoding should be modeled as optional ABI/action metadata or an explicit provider adapter.
-
-## v0.8 Managed Execution
-
-Control Plane indexes the v0.8 IsoniaOS governance protocol events:
-
-```txt
-ProposalExecuted
-OrgExecutorUpdated
-```
-
-`ProposalExecuted` is the canonical execution receipt emitted by `GovProposals`. The `proposal_execution_receipts` read model stores the executor, final target, value, action selector, calldata hash, execution mode, managed executor when present, transaction hash, block number, and raw event reference. Direct execution is represented with `executionMode: "direct"` when `managedExecutor` is the zero address. Managed execution is represented with `executionMode: "managed"` and a non-zero `managedExecutorAddress`.
-
-`OrgExecutorUpdated` materializes the latest org-scoped managed executor configuration in `org_executors`. The REST endpoint is:
-
-```txt
-GET /v1/orgs/:orgId/managed-execution
-```
-
-The endpoint returns shared `OrganizationManagedExecutionDto` data from `@isonia/types`. A zero-address executor is retained in event history but omitted as an active executor in the high-level DTO.
-
-Control Plane does not dynamically index org executor contracts in this wave and does not index arbitrary customer target-contract events. `ManagedCallExecuted` or target-contract events may become supporting evidence later, but they are not required for the core execution receipt read model.
-
-## v0.8 Execution Permission Registry
-
-Control Plane indexes the v0.8 IsoniaOS governance protocol events:
-
-```txt
-ProposalCreated
-ExecutionTargetRuleUpdated
-ExecutionSelectorRuleUpdated
-```
-
-`ProposalCreated` stores selector-aware proposal action identity as `target_address`, `value`, `action_selector`, and `data_hash`. The selector is protocol-declared and lowercased with a `0x` prefix. It is not decoded from arbitrary customer calldata, and Control Plane does not guess selectors from calldata hashes.
-
-The rule update events materialize org-scoped execution target and selector rules in `execution_target_rules` and `execution_selector_rules`. The read endpoint is:
-
-```txt
-GET /v1/orgs/:orgId/execution-permissions
-```
-
-The endpoint returns shared `OrganizationExecutionPermissionsDto` data from `@isonia/types`.
-
-Route explanation uses the registry only when capability evidence says it is supported by explicit deployment capabilities or the configured current protocol profile plus `GOV_PROPOSALS_ADDRESS`. Final target permissions are checked against the proposal `targetAddress`, final selector permissions are checked against the proposal `actionSelector`, and value limits are checked against the proposal `value`. Org executor presence changes execution context but not final target permission semantics. If a supported registry has no enabled target rule, route explanation reports `execution_target_not_allowed`. If the proposal value exceeds the target max value, it reports `execution_value_limit_exceeded`. If selector rules exist and the proposal has a stored action selector, route explanation compares that selector to `execution_selector_rules` without requiring calldata. If selector rules exist but a legacy proposal row has no stored selector, it reports `execution_calldata_unavailable` rather than guessing.
-
-This does not add arbitrary customer contract indexing, DemoTarget decoding, ABI-based action decoding, provider APIs, write endpoints, SaaS behavior, or external provider integrations.
-
-## Indexer Configuration
-
-```txt
-CHAIN_ID=31337
-RPC_URL=http://127.0.0.1:8545
-GOV_CORE_ADDRESS=0x...
-GOV_PROPOSALS_ADDRESS=0x...
-ISONIA_PROTOCOL_PROFILE=current
-ISONIA_DEPLOYMENT_CAPABILITIES_JSON={"activation":{"contractBatch":true},"finalization":{"organization":true},"execution":{"permissionRegistry":true}}
-START_BLOCK=0
-CONFIRMATIONS=0
-BLOCK_RANGE_SIZE=1000
-POLL_INTERVAL_MS=5000
-API_PORT=3000
-CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-CORS_CREDENTIALS=false
-```
-
-Leave contract address variables blank until local contracts are deployed. The zero address is rejected so placeholder config cannot be mistaken for an indexed protocol deployment.
-
-`ISONIA_PROTOCOL_PROFILE=current` means the configured addresses are expected to point at the current IsoniaOS governance protocol implementation. `ISONIA_PROTOCOL_PROFILE=legacy` reports current typed activation/finalization/execution-permission capabilities as unsupported. `ISONIA_PROTOCOL_PROFILE=custom` is conservative and reports unknown unless `ISONIA_DEPLOYMENT_CAPABILITIES_JSON` supplies explicit capability statuses. Supported deployment capability values are `supported`, `unsupported`, `unknown`, `true`, and `false`.
-
-REST API is exposed under `/v1`.
-
-Diagnostics for operator support are available at:
-
-```txt
-GET /v1/diagnostics
-GET /v1/diagnostics/indexer
-GET /v1/capabilities
-GET /v1/orgs/:orgId/finalization
-GET /v1/orgs/:orgId/archive
-GET /v1/orgs/:orgId/execution-permissions
-GET /v1/orgs/:orgId/managed-execution
-```
-
-The diagnostics response includes API version, configured chain and contract addresses, latest observed and safe blocks when RPC is available, indexer cursors, raw event counts, projection backlog/failures, the latest projection error summary, and stale data indicators.
-
-Diagnostics also report whether `OrganizationFinalized` decoding is supported, the configured capability/profile evidence source for finalization, finalization event counts, and whether a finalization event is the latest failed projection.
-
-`/v1/diagnostics/indexer` adds local runtime process heartbeats for the API, indexer, and projection worker so App Core and developers can tell whether workers are running, stale, or unknown.
-
-## Contributing
-
-See `CONTRIBUTING.md` before opening a pull request or handing work back from an AI coding agent.
-
-AI coding agents should follow `AGENTS.md`.
+MIT. See [`LICENSE`](LICENSE).

@@ -1,102 +1,76 @@
-# IsoniaOS Control Plane Agent Rules
+# IsoniaOS Control Plane Agent Instructions
 
-These rules apply to Codex and other AI agents working in `control-plane`.
+## Scope
 
-When this repository is used inside the IsoniaOS workspace, read the workspace-level `../AGENTS.md` first, then return to this file for repository-specific instructions.
+This repository owns the NestJS/PostgreSQL/viem indexing, projection, diagnostics, and REST read API layer for IsoniaOS.
 
-## Repository Purpose
+It does not own governance authority, contract execution decisions, App Core UI, SDK packaging, SaaS billing or tenant administration, provider experiments, private production manifests, or integration-lab fixtures.
 
-`control-plane` is the IsoniaOS indexer, projector, explainer, diagnostics service, and REST read API.
+## Workspace Instruction Chain
 
-It is not a source of governance authority. If Control Plane state disagrees with chain state, chain state wins.
+When working inside the private IsoniaOS workspace, read:
 
-Do not add code paths that allow Control Plane to approve, veto, queue, execute, cancel, or otherwise decide governance actions directly. Those actions belong to contracts and client-side transaction flows.
+1. `../AGENTS.md`
+2. `../CURRENT_ROADMAP.md`
+3. relevant `../private-docs/` index, governance, roadmap, and migration docs
+4. this repository `AGENTS.md`
+5. this repository `/docs` if present and `README.md`
+6. current source/config files before editing
 
-## Active Target
+If this repository is cloned standalone, use this file as the local agent entry point and avoid relying on private workspace-only paths.
 
-Current active target: v0.8 accountability and integration-preview wave.
+## Stack and Commands
 
-Control Plane should support production-shaped read models for Public Governance Archive, Basic Accountability Dashboard, source disclosure, external evidence/context, deployment capabilities, and route/accountability explanation.
+- NestJS service under `src/`
+- PostgreSQL schema and migrations in `src/database` and `src/scripts`
+- EVM event indexing through `viem`
+- Shared DTOs from `@isonia/types`
 
-## Authority and Capability Model
+Useful commands:
 
-Do not infer runtime behavior from package version strings.
-
-Use explicit runtime metadata and deployed evidence, including:
-
-```txt
-ISONIA_PROTOCOL_PROFILE
-ISONIA_DEPLOYMENT_CAPABILITIES_JSON
+```bash
+corepack pnpm install
+corepack pnpm db:migrate
+corepack pnpm start
+corepack pnpm dev
+corepack pnpm indexer:start
+corepack pnpm projections:start
+corepack pnpm projections:rebuild
+corepack pnpm test
+corepack pnpm test:e2e
+corepack pnpm build
+git diff --check
 ```
 
-Runtime capability decisions should be based on profile/capability metadata, configured deployed addresses, ABI/event compatibility, and observable chain state.
+`corepack pnpm lint` and `corepack pnpm format` are available but currently apply fixes/writes.
 
-Do not forward local build selectors as authority or capability sources.
+## Development Principles
 
-## Repository Boundary
-
-Allowed in this public repository:
-
-- NestJS REST API for public read models;
-- local and self-hosted configuration;
-- PostgreSQL schema, migrations, reset, rebuild, and replay scripts;
-- EVM event indexing using configured RPC and contract addresses;
-- replayable projections from raw events;
-- route explanation and diagnostics services;
-- source disclosure and trust-boundary read models;
-- deployment capability read models;
-- tests for configuration, database schema, diagnostics, indexing, projections, and read models.
-
-Do not add:
-
-- DemoTarget, customer ABI, provider assumption, Sepolia lab fixture, or presentation-record hardcoding in core services;
-- SaaS billing, subscriptions, paid plans, usage metering, or Stripe code;
-- hosted-customer provisioning or private production manifests;
-- secrets, API keys, mnemonic phrases, private keys, real hosted database credentials, or customer data;
-- managed AI provider keys or private AI orchestration;
-- production, audit, public beta, SaaS, legal, provider-completeness, or ISO launch-readiness claims.
-
-Provider adapters may be added only when explicitly scoped. Provider data remains evidence/context unless a product spec explicitly models it as authority.
-
-## Dependency Boundaries
-
-- Use `@isonia/types` for shared DTOs, enums, event names, setup structures, source disclosure, accountability, capabilities, and diagnostics shapes.
-- Do not duplicate shared DTOs locally when they belong in `@isonia/types`.
-- Do not depend on `@isonia/sdk` unless a narrowly scoped shared helper is deliberately moved there and documented.
-- Do not add React, UI, wallet-connection UI, App Core, or SaaS code to Control Plane.
-
-## SQL Safety Rules
-
-Raw SQL is acceptable when it is parameterized and reviewable.
-
-Dynamic identifiers, table names, column names, sort fields, sort directions, and filter keys must be whitelisted before interpolation. User input must not be interpolated into SQL text.
-
-Evaluate a type-safe query builder such as Kysely later if useful, but do not introduce ORM churn without an explicit task.
-
-## Indexing and Projection Rules
-
+- Treat contracts as authority for modeled onchain governance state; Control Plane indexes, explains, caches, and diagnoses.
 - Preserve raw events before projection.
-- Store `blockHash` with raw events.
 - Keep projections deterministic, idempotent, transaction-safe, and replayable.
-- Keep event identity duplicate-safe.
+- Keep event identity duplicate-safe and include `blockHash` where raw event integrity needs it.
 - Distinguish RPC failure, indexing delay, projection delay, stale config, contract mismatch, capability mismatch, and database failure in diagnostics.
-- Do not silently fall back to the latest policy when a proposal references a missing policy version.
+- Use `@isonia/types` for shared DTOs, enums, event names, setup structures, source disclosure, accountability, capabilities, and diagnostics shapes.
+- Do not hardcode DemoTarget, customer ABI, provider, Sepolia lab, presentation, or package-version assumptions into core services.
+- Do not add SaaS billing, hosted-customer provisioning, managed AI provider keys, private manifests, secrets, or customer data.
+- Do not make production, audit, public beta, legal, SaaS, provider-completeness, grant, ISO launch, or token launch readiness claims.
 
-## Versioning and Documentation
+## Documentation Rules
 
-- Keep `package.json.version` as SemVer without a leading `v`.
-- Do not create Git tags automatically.
-- Put current work under `CHANGELOG.md` `Unreleased`.
-- Update README, security, contributing, or wider `docs` content when API contracts, DB schema, indexing behavior, diagnostics, capability metadata, or authority boundaries change.
+Update [`README.md`](README.md), `SECURITY.md`, `CONTRIBUTING.md`, and `CHANGELOG.md` under `Unreleased` as relevant when API contracts, database schema, indexing behavior, diagnostics, deployment capability metadata, configuration, or authority boundaries change.
 
-## Verification
+Update the public docs repository when changes affect public users, developers, operators, or public claims.
 
-Run the strongest relevant subset for behavior changes:
+## Testing and Validation
 
-- `corepack pnpm lint`
-- `corepack pnpm test`
-- `corepack pnpm test:e2e` when API behavior changes
-- `corepack pnpm build`
-- `git diff --check`
+For behavior changes, run the strongest relevant subset:
 
-For AGENTS-only changes, `git diff --check` is sufficient.
+```bash
+corepack pnpm test
+corepack pnpm test:e2e
+corepack pnpm build
+git diff --check
+```
+
+Run `corepack pnpm test:e2e` when API behavior changes. For documentation-only changes, `git diff --check` is normally sufficient.
