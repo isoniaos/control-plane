@@ -25,6 +25,7 @@ If this repository is cloned standalone, use this file as the local agent entry 
 - PostgreSQL schema and migrations in `src/database` and `src/scripts`
 - EVM event indexing through `viem`
 - Shared DTOs from `@isonia/types`
+- In the private root workspace, local alpha work resolves `@isonia/types` through the root pnpm workspace link instead of a new GitHub alpha tag
 
 Useful commands:
 

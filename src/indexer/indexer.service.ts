@@ -35,7 +35,7 @@ export class IndexerService {
     const addresses = this.config.contractAddresses;
     if (addresses.length === 0) {
       throw new Error(
-        'GOV_CORE_ADDRESS and/or GOV_PROPOSALS_ADDRESS must be set before indexing',
+        'ISONIA_CORE_ADDRESS and/or ISONIA_PROPOSALS_ADDRESS must be set before indexing',
       );
     }
 

@@ -5,6 +5,8 @@ describe('AppConfigService', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    delete process.env.ISONIA_CORE_ADDRESS;
+    delete process.env.ISONIA_PROPOSALS_ADDRESS;
     delete process.env.GOV_CORE_ADDRESS;
     delete process.env.GOV_PROPOSALS_ADDRESS;
     delete process.env.ISONIA_PROTOCOL_PROFILE;
@@ -16,30 +18,61 @@ describe('AppConfigService', () => {
   });
 
   it('treats blank contract addresses as unconfigured', () => {
-    process.env.GOV_CORE_ADDRESS = '';
-    process.env.GOV_PROPOSALS_ADDRESS = '';
+    process.env.ISONIA_CORE_ADDRESS = '';
+    process.env.ISONIA_PROPOSALS_ADDRESS = '';
 
     const config = new AppConfigService();
 
-    expect(config.contracts.govCoreAddress).toBeUndefined();
-    expect(config.contracts.govProposalsAddress).toBeUndefined();
+    expect(config.contracts.isoCoreAddress).toBeUndefined();
+    expect(config.contracts.isoProposalsAddress).toBeUndefined();
     expect(config.contractAddresses).toEqual([]);
   });
 
+  it('parses configured Isonia protocol contract addresses', () => {
+    process.env.ISONIA_CORE_ADDRESS =
+      '0x0000000000000000000000000000000000000001';
+    process.env.ISONIA_PROPOSALS_ADDRESS =
+      '0x0000000000000000000000000000000000000002';
+
+    const config = new AppConfigService();
+
+    expect(config.contracts).toEqual({
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
+      isoProposalsAddress: '0x0000000000000000000000000000000000000002',
+    });
+    expect(config.contractAddresses).toEqual([
+      '0x0000000000000000000000000000000000000001',
+      '0x0000000000000000000000000000000000000002',
+    ]);
+  });
+
   it('rejects zero-address contract placeholders', () => {
-    process.env.GOV_CORE_ADDRESS = '0x0000000000000000000000000000000000000000';
+    process.env.ISONIA_CORE_ADDRESS =
+      '0x0000000000000000000000000000000000000000';
 
     expect(() => new AppConfigService()).toThrow(
-      'Zero address is not valid for environment variable: GOV_CORE_ADDRESS',
+      'Zero address is not valid for environment variable: ISONIA_CORE_ADDRESS',
     );
   });
 
   it('rejects malformed contract addresses', () => {
-    process.env.GOV_CORE_ADDRESS = '0x1234';
+    process.env.ISONIA_PROPOSALS_ADDRESS = '0x1234';
 
     expect(() => new AppConfigService()).toThrow(
-      'Invalid address environment variable: GOV_CORE_ADDRESS',
+      'Invalid address environment variable: ISONIA_PROPOSALS_ADDRESS',
     );
+  });
+
+  it('does not treat old GOV_* variables as active aliases', () => {
+    process.env.GOV_CORE_ADDRESS =
+      '0x0000000000000000000000000000000000000001';
+    process.env.GOV_PROPOSALS_ADDRESS =
+      '0x0000000000000000000000000000000000000002';
+
+    const config = new AppConfigService();
+
+    expect(config.contracts).toEqual({});
+    expect(config.contractAddresses).toEqual([]);
   });
 
   it('treats blank protocol profile and deployment capabilities as unknown metadata', () => {

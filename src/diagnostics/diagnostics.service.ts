@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { GovernanceEventName } from '@isonia/types';
+import {
+  GovernanceEventName,
+  ISONIA_PROTOCOL_CONTRACT_KEYS,
+} from '@isonia/types';
 import type {
   Address,
   ChainId,
@@ -267,8 +270,14 @@ export class DiagnosticsService {
 
   private getConfiguredContracts(): DiagnosticsContractDto[] {
     return [
-      toContractDto('govCore', this.config.contracts.govCoreAddress),
-      toContractDto('govProposals', this.config.contracts.govProposalsAddress),
+      toContractDto(
+        ISONIA_PROTOCOL_CONTRACT_KEYS.IsoCore,
+        this.config.contracts.isoCoreAddress,
+      ),
+      toContractDto(
+        ISONIA_PROTOCOL_CONTRACT_KEYS.IsoProposals,
+        this.config.contracts.isoProposalsAddress,
+      ),
     ];
   }
 

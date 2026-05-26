@@ -3,6 +3,7 @@ import {
   ArchiveProposalDisplayState,
   DataStatus,
   DecisionType,
+  DeploymentCapabilityStatus,
   ExternalAuthorityClaim,
   ExternalSourceLabel,
   ExternalTrustBoundary,
@@ -612,7 +613,7 @@ describe('ReadModelsService', () => {
       },
       {
         deploymentCapabilities: {
-          organizationFinalization: 'unsupported',
+          organizationFinalization: DeploymentCapabilityStatus.Unsupported,
         },
       },
     );
@@ -795,7 +796,7 @@ function createRouteService(fixture: RouteFixture): {
     deploymentCapabilities: {},
     contracts: fixture.executionPermissionRegistrySupported
       ? {
-          govProposalsAddress: '0x0000000000000000000000000000000000000002',
+          isoProposalsAddress: '0x0000000000000000000000000000000000000002',
         }
       : {},
   } as unknown as AppConfigService;
@@ -1029,7 +1030,7 @@ function createV08ReadModelService(
     protocolProfile: 'current',
     deploymentCapabilities: {},
     contracts: {
-      govCoreAddress: '0x0000000000000000000000000000000000000001',
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
     },
   } as unknown as AppConfigService;
   return { service: new ReadModelsService(db, config), query };
@@ -1040,7 +1041,7 @@ function supportedFinalizationConfig(): Partial<AppConfigService> {
     protocolProfile: 'current',
     deploymentCapabilities: {},
     contracts: {
-      govCoreAddress: '0x0000000000000000000000000000000000000001',
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
     },
   } as unknown as Partial<AppConfigService>;
 }

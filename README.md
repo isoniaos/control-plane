@@ -12,6 +12,8 @@ Requires Node.js 22 or newer, pnpm through Corepack, and PostgreSQL.
 corepack pnpm install
 ```
 
+During coordinated alpha work in the private IsoniaOS workspace, `@isonia/types` is resolved through the root pnpm workspace link. Standalone consumers should use a coherent release tag or provide the same local workspace layout; ordinary alpha development does not require new GitHub alpha tags.
+
 Copy or adapt [`.env.example`](.env.example) for local development.
 
 ## Configuration
@@ -24,8 +26,8 @@ Configuration is read by [`src/config/app-config.service.ts`](src/config/app-con
 | `API_PORT` / `PORT` | API port, default `3000`; `API_PORT` wins |
 | `CHAIN_ID` | EVM chain ID, default `31337` |
 | `RPC_URL` / `RPC_HTTP_URL` | RPC endpoint, default `http://127.0.0.1:8545`; `RPC_URL` wins |
-| `GOV_CORE_ADDRESS` | Optional non-zero EVM address for `GovCore` |
-| `GOV_PROPOSALS_ADDRESS` | Optional non-zero EVM address for `GovProposals` |
+| `ISONIA_CORE_ADDRESS` | Optional non-zero EVM address for `IsoCore` |
+| `ISONIA_PROPOSALS_ADDRESS` | Optional non-zero EVM address for `IsoProposals` |
 | `ISONIA_PROTOCOL_PROFILE` | Optional profile: `current`, `legacy`, or `custom` |
 | `ISONIA_DEPLOYMENT_CAPABILITIES_JSON` | Optional JSON object that overrides deployment capabilities |
 | `START_BLOCK` | Indexer start block, default `0` |
@@ -81,7 +83,7 @@ corepack pnpm test:e2e
 
 ## Troubleshooting
 
-- Invalid `GOV_CORE_ADDRESS` or `GOV_PROPOSALS_ADDRESS` values fail startup; use full non-zero `0x` addresses.
+- Invalid `ISONIA_CORE_ADDRESS` or `ISONIA_PROPOSALS_ADDRESS` values fail startup; use full non-zero `0x` addresses.
 - If database connection fails, prefer one clear `DATABASE_URL` or verify all `PG_*` values together.
 - If browser calls fail, confirm `CORS_ORIGINS` includes the App Core origin.
 - If capability metadata is wrong or missing, check `ISONIA_PROTOCOL_PROFILE` and `ISONIA_DEPLOYMENT_CAPABILITIES_JSON`.

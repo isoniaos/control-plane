@@ -50,12 +50,12 @@ describe('DiagnosticsService', () => {
       confirmations: 5,
       contracts: [
         {
-          name: 'govCore',
+          name: 'isoCore',
           configured: true,
           address: '0x0000000000000000000000000000000000000001',
         },
         {
-          name: 'govProposals',
+          name: 'isoProposals',
           configured: true,
           address: '0x0000000000000000000000000000000000000002',
         },
@@ -64,7 +64,7 @@ describe('DiagnosticsService', () => {
       latestSafeBlock: '115',
       lastScannedBlocks: [
         {
-          contractName: 'govCore',
+          contractName: 'isoCore',
           address: '0x0000000000000000000000000000000000000001',
           lastScannedBlock: '100',
           lastConfirmedBlock: '100',
@@ -72,7 +72,7 @@ describe('DiagnosticsService', () => {
           lagFromSafeBlock: '15',
         },
         {
-          contractName: 'govProposals',
+          contractName: 'isoProposals',
           address: '0x0000000000000000000000000000000000000002',
         },
       ],
@@ -115,8 +115,8 @@ describe('DiagnosticsService', () => {
         {
           code: 'indexer_behind_safe_block',
           severity: 'warning',
-          message: 'govCore indexer cursor is behind the latest safe block.',
-          contractName: 'govCore',
+          message: 'isoCore indexer cursor is behind the latest safe block.',
+          contractName: 'isoCore',
           contractAddress: '0x0000000000000000000000000000000000000001',
           lastScannedBlock: '100',
           latestSafeBlock: '115',
@@ -125,8 +125,8 @@ describe('DiagnosticsService', () => {
         {
           code: 'contract_cursor_missing',
           severity: 'warning',
-          message: 'govProposals has not been scanned yet.',
-          contractName: 'govProposals',
+          message: 'isoProposals has not been scanned yet.',
+          contractName: 'isoProposals',
           contractAddress: '0x0000000000000000000000000000000000000002',
           latestSafeBlock: '115',
         },
@@ -184,12 +184,12 @@ describe('DiagnosticsService', () => {
         rpcUrl: 'http://127.0.0.1:8545/',
         contracts: [
           {
-            name: 'govCore',
+            name: 'isoCore',
             configured: true,
             address: '0x0000000000000000000000000000000000000001',
           },
           {
-            name: 'govProposals',
+            name: 'isoProposals',
             configured: true,
             address: '0x0000000000000000000000000000000000000002',
           },
@@ -211,8 +211,8 @@ describe('DiagnosticsService', () => {
           {
             code: 'indexer_behind_safe_block',
             severity: 'warning',
-            message: 'govCore indexer cursor is behind the latest safe block.',
-            contractName: 'govCore',
+            message: 'isoCore indexer cursor is behind the latest safe block.',
+            contractName: 'isoCore',
             contractAddress: '0x0000000000000000000000000000000000000001',
             lastScannedBlock: '100',
             latestSafeBlock: '115',
@@ -221,8 +221,8 @@ describe('DiagnosticsService', () => {
           {
             code: 'contract_cursor_missing',
             severity: 'warning',
-            message: 'govProposals has not been scanned yet.',
-            contractName: 'govProposals',
+            message: 'isoProposals has not been scanned yet.',
+            contractName: 'isoProposals',
             contractAddress: '0x0000000000000000000000000000000000000002',
             latestSafeBlock: '115',
           },
@@ -343,8 +343,8 @@ function createService(): {
       '0x0000000000000000000000000000000000000002',
     ],
     contracts: {
-      govCoreAddress: '0x0000000000000000000000000000000000000001',
-      govProposalsAddress: '0x0000000000000000000000000000000000000002',
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
+      isoProposalsAddress: '0x0000000000000000000000000000000000000002',
     },
     protocolProfile: 'current',
     deploymentCapabilities: {},

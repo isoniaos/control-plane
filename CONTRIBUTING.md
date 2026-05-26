@@ -15,6 +15,8 @@ Read these files first:
 
 During active development, use current workspace sources and the current repository roadmap context. Do not treat old alpha line notes as current behavior unless the current code and docs still support them.
 
+Inside the private IsoniaOS workspace, `@isonia/types` is resolved through the root pnpm workspace link during coordinated alpha work. Do not create new GitHub alpha tags just to consume sibling source changes.
+
 ## Architecture boundary
 
 Smart contracts are the source of governance authority.

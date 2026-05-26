@@ -1,52 +1,39 @@
 import {
   ActivationCapabilityStatus,
+  DeploymentCapabilityStatus,
+  ISONIA_PROTOCOL_ADDRESS_ENV_VARS,
+  ISONIA_PROTOCOL_CONTRACT_NAMES,
+  IsoniaProtocolProfile,
   ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES,
+  RuntimeCapabilitySource,
+  type DeploymentCapabilitiesConfigDto,
+  type DeploymentCapabilityResolutionInputDto,
   type OrganizationFinalizationCapabilityStatus,
+  type RuntimeCapabilityResolutionDto,
 } from '@isonia/types';
 
 export const ISONIA_PROTOCOL_PROFILES = [
-  'current',
-  'legacy',
-  'custom',
+  IsoniaProtocolProfile.Current,
+  IsoniaProtocolProfile.Legacy,
+  IsoniaProtocolProfile.Custom,
 ] as const;
 
-export type IsoniaProtocolProfile = (typeof ISONIA_PROTOCOL_PROFILES)[number];
+export {
+  DeploymentCapabilityStatus,
+  IsoniaProtocolProfile,
+  RuntimeCapabilitySource,
+};
 
 export const DEPLOYMENT_CAPABILITY_STATUSES = {
-  Supported: 'supported',
-  Unsupported: 'unsupported',
-  Unknown: 'unknown',
+  Supported: DeploymentCapabilityStatus.Supported,
+  Unsupported: DeploymentCapabilityStatus.Unsupported,
+  Unknown: DeploymentCapabilityStatus.Unknown,
 } as const;
 
-export type DeploymentCapabilityStatus =
-  (typeof DEPLOYMENT_CAPABILITY_STATUSES)[keyof typeof DEPLOYMENT_CAPABILITY_STATUSES];
+export type DeploymentCapabilitiesConfig = DeploymentCapabilitiesConfigDto;
+export type RuntimeCapabilityResolution = RuntimeCapabilityResolutionDto;
 
-export interface DeploymentCapabilitiesConfig {
-  readonly contractBatchActivation?: DeploymentCapabilityStatus;
-  readonly organizationFinalization?: DeploymentCapabilityStatus;
-  readonly executionPermissionRegistry?: DeploymentCapabilityStatus;
-}
-
-export type RuntimeCapabilitySource =
-  | 'deployment_capabilities'
-  | 'protocol_profile'
-  | 'contract_address_presence'
-  | 'unknown';
-
-export interface RuntimeCapabilityResolution {
-  readonly status: DeploymentCapabilityStatus;
-  readonly source: RuntimeCapabilitySource;
-  readonly reason: string;
-}
-
-interface CapabilityResolutionInput {
-  readonly protocolProfile?: IsoniaProtocolProfile;
-  readonly deploymentCapabilities: DeploymentCapabilitiesConfig;
-  readonly contracts: {
-    readonly govCoreAddress?: `0x${string}`;
-    readonly govProposalsAddress?: `0x${string}`;
-  };
-}
+type CapabilityResolutionInput = DeploymentCapabilityResolutionInputDto;
 
 export function parseIsoniaProtocolProfile(
   value: string | undefined,
@@ -138,13 +125,13 @@ export function resolveContractBatchActivationCapability(
   if (explicit) {
     return {
       status: explicit,
-      source: 'deployment_capabilities',
+      source: RuntimeCapabilitySource.DeploymentCapabilities,
       reason:
         'Contract batch activation was resolved from explicit deployment capability metadata.',
     };
   }
 
-  return resolveCurrentGovCoreCapability(input, 'Contract batch activation');
+  return resolveCurrentIsoCoreCapability(input, 'Contract batch activation');
 }
 
 export function resolveOrganizationFinalizationCapability(
@@ -154,13 +141,13 @@ export function resolveOrganizationFinalizationCapability(
   if (explicit) {
     return {
       status: explicit,
-      source: 'deployment_capabilities',
+      source: RuntimeCapabilitySource.DeploymentCapabilities,
       reason:
         'Organization finalization was resolved from explicit deployment capability metadata.',
     };
   }
 
-  return resolveCurrentGovCoreCapability(input, 'Organization finalization');
+  return resolveCurrentIsoCoreCapability(input, 'Organization finalization');
 }
 
 export function resolveExecutionPermissionRegistryCapability(
@@ -170,13 +157,13 @@ export function resolveExecutionPermissionRegistryCapability(
   if (explicit) {
     return {
       status: explicit,
-      source: 'deployment_capabilities',
+      source: RuntimeCapabilitySource.DeploymentCapabilities,
       reason:
         'Execution permission registry was resolved from explicit deployment capability metadata.',
     };
   }
 
-  return resolveCurrentGovProposalsCapability(
+  return resolveCurrentIsoProposalsCapability(
     input,
     'Execution permission registry',
   );
@@ -208,70 +195,70 @@ export function toOrganizationFinalizationCapabilityStatus(
   }
 }
 
-function resolveCurrentGovCoreCapability(
+function resolveCurrentIsoCoreCapability(
   input: CapabilityResolutionInput,
   label: string,
 ): RuntimeCapabilityResolution {
-  if (input.protocolProfile === 'legacy') {
+  if (input.protocolProfile === IsoniaProtocolProfile.Legacy) {
     return {
       status: DEPLOYMENT_CAPABILITY_STATUSES.Unsupported,
-      source: 'protocol_profile',
+      source: RuntimeCapabilitySource.ProtocolProfile,
       reason: `${label} is disabled by the configured legacy protocol profile.`,
     };
   }
 
-  if (input.protocolProfile === 'current') {
-    if (input.contracts.govCoreAddress) {
+  if (input.protocolProfile === IsoniaProtocolProfile.Current) {
+    if (input.contracts.isoCoreAddress) {
       return {
         status: DEPLOYMENT_CAPABILITY_STATUSES.Supported,
-        source: 'contract_address_presence',
-        reason: `${label} is enabled by the current protocol profile and configured GovCore address.`,
+        source: RuntimeCapabilitySource.ContractAddressPresence,
+        reason: `${label} is enabled by the current protocol profile and configured ${ISONIA_PROTOCOL_CONTRACT_NAMES.IsoCore} address.`,
       };
     }
     return {
       status: DEPLOYMENT_CAPABILITY_STATUSES.Unknown,
-      source: 'contract_address_presence',
-      reason: `${label} cannot be proven because GOV_CORE_ADDRESS is not configured.`,
+      source: RuntimeCapabilitySource.ContractAddressPresence,
+      reason: `${label} cannot be proven because ${ISONIA_PROTOCOL_ADDRESS_ENV_VARS.IsoCore} is not configured.`,
     };
   }
 
   return {
     status: DEPLOYMENT_CAPABILITY_STATUSES.Unknown,
-    source: 'unknown',
+    source: RuntimeCapabilitySource.Unknown,
     reason: `${label} cannot be proven without deployment capabilities or a supported protocol profile.`,
   };
 }
 
-function resolveCurrentGovProposalsCapability(
+function resolveCurrentIsoProposalsCapability(
   input: CapabilityResolutionInput,
   label: string,
 ): RuntimeCapabilityResolution {
-  if (input.protocolProfile === 'legacy') {
+  if (input.protocolProfile === IsoniaProtocolProfile.Legacy) {
     return {
       status: DEPLOYMENT_CAPABILITY_STATUSES.Unsupported,
-      source: 'protocol_profile',
+      source: RuntimeCapabilitySource.ProtocolProfile,
       reason: `${label} is disabled by the configured legacy protocol profile.`,
     };
   }
 
-  if (input.protocolProfile === 'current') {
-    if (input.contracts.govProposalsAddress) {
+  if (input.protocolProfile === IsoniaProtocolProfile.Current) {
+    if (input.contracts.isoProposalsAddress) {
       return {
         status: DEPLOYMENT_CAPABILITY_STATUSES.Supported,
-        source: 'contract_address_presence',
-        reason: `${label} is enabled by the current protocol profile and configured GovProposals address.`,
+        source: RuntimeCapabilitySource.ContractAddressPresence,
+        reason: `${label} is enabled by the current protocol profile and configured ${ISONIA_PROTOCOL_CONTRACT_NAMES.IsoProposals} address.`,
       };
     }
     return {
       status: DEPLOYMENT_CAPABILITY_STATUSES.Unknown,
-      source: 'contract_address_presence',
-      reason: `${label} cannot be proven because GOV_PROPOSALS_ADDRESS is not configured.`,
+      source: RuntimeCapabilitySource.ContractAddressPresence,
+      reason: `${label} cannot be proven because ${ISONIA_PROTOCOL_ADDRESS_ENV_VARS.IsoProposals} is not configured.`,
     };
   }
 
   return {
     status: DEPLOYMENT_CAPABILITY_STATUSES.Unknown,
-    source: 'unknown',
+    source: RuntimeCapabilitySource.Unknown,
     reason: `${label} cannot be proven without deployment capabilities or a supported protocol profile.`,
   };
 }

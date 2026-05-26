@@ -98,9 +98,9 @@ Diagnostics must not expose secrets. Sensitive values must be masked, omitted, o
 
 ## Dependency and supply-chain hygiene
 
-Use pinned Isonia package tags or immutable commit refs before public beta.
+During coordinated alpha workspace work, local `@isonia/*` packages can be resolved through the private root pnpm workspace link. For deployable release builds, use coherent release tags or immutable commit refs instead of floating branches.
 
-Do not depend on floating branches for deployable builds. Keep dependency updates focused, review lockfile changes carefully, and avoid unrelated upgrades during security-sensitive work.
+Keep dependency updates focused, review lockfile changes carefully, and avoid unrelated upgrades during security-sensitive work.
 
 ## Coordinated disclosure expectations
 

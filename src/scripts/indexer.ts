@@ -14,15 +14,15 @@ async function main(): Promise<void> {
   const startupMetadata = {
     chainId: config.chainId,
     rpcUrl: maskUrl(config.rpcUrl),
-    govCoreAddress: config.contracts.govCoreAddress ?? null,
-    govProposalsAddress: config.contracts.govProposalsAddress ?? null,
+    isoCoreAddress: config.contracts.isoCoreAddress ?? null,
+    isoProposalsAddress: config.contracts.isoProposalsAddress ?? null,
     fromBlock: fromBlock.toString(),
     pollingIntervalMs: config.pollIntervalMs,
     safeBlockLag: config.confirmations,
   };
 
   logger.log(
-    `Indexer starting chainId=${startupMetadata.chainId} rpcUrl=${startupMetadata.rpcUrl} govCore=${startupMetadata.govCoreAddress ?? 'not-configured'} govProposals=${startupMetadata.govProposalsAddress ?? 'not-configured'} fromBlock=${startupMetadata.fromBlock} pollingIntervalMs=${startupMetadata.pollingIntervalMs} safeBlockLag=${startupMetadata.safeBlockLag}`,
+    `Indexer starting chainId=${startupMetadata.chainId} rpcUrl=${startupMetadata.rpcUrl} isoCore=${startupMetadata.isoCoreAddress ?? 'not-configured'} isoProposals=${startupMetadata.isoProposalsAddress ?? 'not-configured'} fromBlock=${startupMetadata.fromBlock} pollingIntervalMs=${startupMetadata.pollingIntervalMs} safeBlockLag=${startupMetadata.safeBlockLag}`,
   );
   app.get(RuntimeHeartbeatService).start('indexer', () => startupMetadata);
   await indexer.runForever();

@@ -6,7 +6,7 @@ This checklist is for future repository publication or package-publication revie
 
 1. Confirm `.env`, local database files, private deployment manifests, keys, mnemonics, hosted RPC tokens, production database URLs, API keys, and customer data are not tracked.
 2. Confirm package metadata, repository URLs, license metadata, README, SECURITY, CONTRIBUTING, AGENTS, and CHANGELOG are current.
-3. Confirm current dependency refs are intentional and do not rely on floating branches for deployable builds.
+3. Confirm current dependency refs are intentional. If alpha workspace links are present, confirm publication will use the private root workspace context or a coherent release tag; do not rely on floating branches for deployable builds.
 4. Run the strongest relevant validation subset and record exact results.
 5. Update the public docs repository if package/public repository URLs, setup, configuration, API behavior, or operator guidance changed.
 

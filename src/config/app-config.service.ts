@@ -1,15 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import {
+  ISONIA_PROTOCOL_ADDRESS_ENV_VARS,
+  type IsoniaProtocolAddressConfigDto,
+} from '@isonia/types';
+import {
   parseDeploymentCapabilitiesJson,
   parseIsoniaProtocolProfile,
   type DeploymentCapabilitiesConfig,
   type IsoniaProtocolProfile,
 } from '../system/deployment-capabilities';
 
-export interface ContractConfig {
-  readonly govCoreAddress?: `0x${string}`;
-  readonly govProposalsAddress?: `0x${string}`;
-}
+export type ContractConfig = IsoniaProtocolAddressConfigDto;
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -51,14 +52,16 @@ export class AppConfigService {
     );
 
   readonly contracts: ContractConfig = {
-    govCoreAddress: this.readAddress('GOV_CORE_ADDRESS'),
-    govProposalsAddress: this.readAddress('GOV_PROPOSALS_ADDRESS'),
+    isoCoreAddress: this.readAddress(ISONIA_PROTOCOL_ADDRESS_ENV_VARS.IsoCore),
+    isoProposalsAddress: this.readAddress(
+      ISONIA_PROTOCOL_ADDRESS_ENV_VARS.IsoProposals,
+    ),
   };
 
   get contractAddresses(): `0x${string}`[] {
     return [
-      this.contracts.govCoreAddress,
-      this.contracts.govProposalsAddress,
+      this.contracts.isoCoreAddress,
+      this.contracts.isoProposalsAddress,
     ].filter((address): address is `0x${string}` => Boolean(address));
   }
 

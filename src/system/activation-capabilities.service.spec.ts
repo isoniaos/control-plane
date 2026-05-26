@@ -6,9 +6,10 @@ import {
   ORGANIZATION_FINALIZATION_CONTRACT_FUNCTION_NAME_VALUES,
 } from '@isonia/types';
 import { AppConfigService } from '../config/app-config.service';
-import type {
-  DeploymentCapabilitiesConfig,
+import {
+  DeploymentCapabilityStatus,
   IsoniaProtocolProfile,
+  type DeploymentCapabilitiesConfig,
 } from './deployment-capabilities';
 import { ActivationCapabilitiesService } from './activation-capabilities.service';
 
@@ -32,10 +33,10 @@ describe('ActivationCapabilitiesService', () => {
     });
   });
 
-  it('reports contract batch activation support from current profile and configured GovCore address', () => {
+  it('reports contract batch activation support from current profile and configured IsoCore address', () => {
     const service = createService({
-      protocolProfile: 'current',
-      govCoreAddress: '0x0000000000000000000000000000000000000001',
+      protocolProfile: IsoniaProtocolProfile.Current,
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
     });
 
     const capabilities = service.getActivationCapabilities();
@@ -53,10 +54,10 @@ describe('ActivationCapabilitiesService', () => {
 
   it('uses explicit deployment capability metadata before profile defaults', () => {
     const service = createService({
-      protocolProfile: 'legacy',
+      protocolProfile: IsoniaProtocolProfile.Legacy,
       deploymentCapabilities: {
-        contractBatchActivation: 'supported',
-        organizationFinalization: 'supported',
+        contractBatchActivation: DeploymentCapabilityStatus.Supported,
+        organizationFinalization: DeploymentCapabilityStatus.Supported,
       },
     });
 
@@ -78,8 +79,8 @@ describe('ActivationCapabilitiesService', () => {
 
   it('does not report EIP-5792 as a primary or available activation mode', () => {
     const service = createService({
-      protocolProfile: 'current',
-      govCoreAddress: '0x0000000000000000000000000000000000000001',
+      protocolProfile: IsoniaProtocolProfile.Current,
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
     });
 
     const capabilities = service.getActivationCapabilities();
@@ -96,8 +97,8 @@ describe('ActivationCapabilitiesService', () => {
 
   it('does not expose RPC or database secrets in the capability response', () => {
     const service = createService({
-      protocolProfile: 'current',
-      govCoreAddress: '0x0000000000000000000000000000000000000001',
+      protocolProfile: IsoniaProtocolProfile.Current,
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
       rpcUrl: 'https://example.invalid/rpc?token=secret-rpc-token',
       databaseUrl: 'postgres://postgres:secret-db-pass@localhost/control-plane',
     });
@@ -110,7 +111,9 @@ describe('ActivationCapabilitiesService', () => {
   });
 
   it('reports finalization as unsupported for legacy deployment profiles', () => {
-    const service = createService({ protocolProfile: 'legacy' });
+    const service = createService({
+      protocolProfile: IsoniaProtocolProfile.Legacy,
+    });
 
     const capabilities = service.getCapabilities();
 
@@ -127,10 +130,10 @@ describe('ActivationCapabilitiesService', () => {
     ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported);
   });
 
-  it('reports finalization as supported from current profile and configured GovCore address', () => {
+  it('reports finalization as supported from current profile and configured IsoCore address', () => {
     const service = createService({
-      protocolProfile: 'current',
-      govCoreAddress: '0x0000000000000000000000000000000000000001',
+      protocolProfile: IsoniaProtocolProfile.Current,
+      isoCoreAddress: '0x0000000000000000000000000000000000000001',
     });
 
     const capabilities = service.getCapabilities();
@@ -154,7 +157,8 @@ describe('ActivationCapabilitiesService', () => {
       createService().getCapabilities().finalization.organization.status,
     ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unknown);
     expect(
-      createService({ protocolProfile: 'current' }).getCapabilities()
+      createService({ protocolProfile: IsoniaProtocolProfile.Current })
+        .getCapabilities()
         .finalization.organization.status,
     ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unknown);
   });
@@ -163,8 +167,8 @@ describe('ActivationCapabilitiesService', () => {
     expect(
       createService({
         deploymentCapabilities: {
-          contractBatchActivation: 'unsupported',
-          organizationFinalization: 'unsupported',
+          contractBatchActivation: DeploymentCapabilityStatus.Unsupported,
+          organizationFinalization: DeploymentCapabilityStatus.Unsupported,
         },
       }).getCapabilities().finalization.organization.status,
     ).toBe(ORGANIZATION_FINALIZATION_CAPABILITY_STATUSES.Unsupported);
@@ -175,8 +179,8 @@ function createService(
   options: Partial<{
     readonly protocolProfile: IsoniaProtocolProfile;
     readonly deploymentCapabilities: DeploymentCapabilitiesConfig;
-    readonly govCoreAddress: `0x${string}`;
-    readonly govProposalsAddress: `0x${string}`;
+    readonly isoCoreAddress: `0x${string}`;
+    readonly isoProposalsAddress: `0x${string}`;
   }> &
     Partial<AppConfigService> = {},
 ): ActivationCapabilitiesService {
@@ -185,8 +189,8 @@ function createService(
     protocolProfile: options.protocolProfile,
     deploymentCapabilities: options.deploymentCapabilities ?? {},
     contracts: {
-      govCoreAddress: options.govCoreAddress,
-      govProposalsAddress: options.govProposalsAddress,
+      isoCoreAddress: options.isoCoreAddress,
+      isoProposalsAddress: options.isoProposalsAddress,
     },
     ...options,
   } as unknown as AppConfigService;
