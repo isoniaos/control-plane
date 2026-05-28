@@ -10,6 +10,7 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 - Migrated active Control Plane configuration, runtime address DTOs, diagnostics contract names, and capability reasons to the `Iso*` / `ISONIA_*` / `iso*` protocol namespace.
 - Changed the local alpha `@isonia/types` dependency to the root pnpm workspace link instead of a GitHub alpha tag.
+- Updated the README public docs link to the current single developer overview.
 
 ## [0.8.0-alpha.4]
 

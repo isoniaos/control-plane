@@ -2,7 +2,7 @@
 
 Control Plane is the IsoniaOS indexing, projection, diagnostics, and REST read API service. It ingests configured EVM governance contract events, stores raw events, builds replayable read models, and exposes public read surfaces for organization state, proposals, routes, archives, accountability, external resources, capabilities, and diagnostics.
 
-Control Plane is not governance authority. If a read model disagrees with modeled contract state, the modeled contract state wins. The public developer overview is in [site/developers/control-plane.md](https://github.com/isoniaos/docs/blob/main/site/developers/control-plane.md).
+Control Plane is not governance authority. If a read model disagrees with modeled contract state, the modeled contract state wins. The public developer overview is in [site/developers/index.md](https://github.com/isoniaos/docs/blob/main/site/developers/index.md).
 
 ## Installation
 
