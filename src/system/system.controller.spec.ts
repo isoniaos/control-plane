@@ -8,15 +8,26 @@ import { ActivationCapabilitiesService } from './activation-capabilities.service
 import { SystemController } from './system.controller';
 
 describe('SystemController', () => {
+  const originalEnv = process.env;
   let controller: SystemController;
 
   beforeEach(async () => {
+    process.env = { ...originalEnv };
+    delete process.env.ISONIA_CORE_ADDRESS;
+    delete process.env.ISONIA_PROPOSALS_ADDRESS;
+    delete process.env.ISONIA_PROTOCOL_PROFILE;
+    delete process.env.ISONIA_DEPLOYMENT_CAPABILITIES_JSON;
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SystemController],
       providers: [AppConfigService, ActivationCapabilitiesService],
     }).compile();
 
     controller = module.get(SystemController);
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   it('returns health status', () => {
