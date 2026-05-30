@@ -73,6 +73,52 @@ corepack pnpm projections:start
 corepack pnpm projections:rebuild
 ```
 
+## Local Docker Stack
+
+For local test runs, Control Plane includes a Docker Compose stack with:
+
+- the Control Plane API, indexer, and projection worker in one service;
+- PostgreSQL for read models and runtime state;
+- a local Kubo/IPFS node for integration testing.
+
+The Docker image is built from the private workspace root so the local
+`@isonia/types` workspace package resolves without publishing a new alpha tag.
+
+```bash
+cd control-plane
+cp .env.docker.example .env.docker
+docker compose --env-file .env.docker -f docker-compose.local.yml up --build
+```
+
+The default service ports are:
+
+| Service | URL / port |
+| --- | --- |
+| Control Plane API | `http://localhost:3000` |
+| PostgreSQL | `localhost:5433` |
+| IPFS API | `http://localhost:5001` |
+| IPFS gateway | `http://localhost:8080` |
+| IPFS swarm | `4001/tcp` and `4001/udp` |
+
+The stack does not deploy contracts or start an EVM node. By default `RPC_URL`
+points at `http://host.docker.internal:8545`, which is suitable for a local
+Hardhat/Anvil node running on the host. Set `ISONIA_CORE_ADDRESS` and/or
+`ISONIA_PROPOSALS_ADDRESS` in `.env.docker` after deploying the local contracts.
+If both addresses are blank, the API and projection worker can still start, but
+the indexer will report that no protocol contract address is configured.
+
+To stop the local stack while keeping database and IPFS data:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.local.yml down
+```
+
+To reset the local Docker data:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.local.yml down -v
+```
+
 Build and test:
 
 ```bash

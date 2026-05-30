@@ -6,6 +6,10 @@ All notable changes to `@isonia/control-plane` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added a local Docker Compose stack with a Control Plane service, PostgreSQL, and Kubo/IPFS for local testing.
+
 ### Changed
 
 - Migrated active Control Plane configuration, runtime address DTOs, diagnostics contract names, and capability reasons to the `Iso*` / `ISONIA_*` / `iso*` protocol namespace.

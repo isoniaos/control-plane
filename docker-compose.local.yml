@@ -1,0 +1,93 @@
+name: isonia-control-plane-local
+
+services:
+  control-plane:
+    build:
+      context: ..
+      dockerfile: control-plane/Dockerfile
+    environment:
+      NODE_ENV: development
+      API_PORT: 3000
+      DATABASE_URL: postgres://${CONTROL_PLANE_POSTGRES_USER:-postgres}:${CONTROL_PLANE_POSTGRES_PASSWORD:-secret}@postgres:5432/${CONTROL_PLANE_POSTGRES_DB:-control-plane}
+      CHAIN_ID: ${CHAIN_ID:-31337}
+      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      ISONIA_CORE_ADDRESS: ${ISONIA_CORE_ADDRESS:-}
+      ISONIA_PROPOSALS_ADDRESS: ${ISONIA_PROPOSALS_ADDRESS:-}
+      ISONIA_PROTOCOL_PROFILE: ${ISONIA_PROTOCOL_PROFILE:-current}
+      ISONIA_DEPLOYMENT_CAPABILITIES_JSON: ${ISONIA_DEPLOYMENT_CAPABILITIES_JSON:-}
+      START_BLOCK: ${START_BLOCK:-0}
+      CONFIRMATIONS: ${CONFIRMATIONS:-0}
+      BLOCK_RANGE_SIZE: ${BLOCK_RANGE_SIZE:-1000}
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-5000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      CORS_CREDENTIALS: ${CORS_CREDENTIALS:-false}
+      IPFS_API_URL: http://ipfs:5001
+      IPFS_GATEWAY_URL: http://ipfs:8080
+      CONTROL_PLANE_MIGRATE_ON_START: ${CONTROL_PLANE_MIGRATE_ON_START:-true}
+      CONTROL_PLANE_INDEXER_ENABLED: ${CONTROL_PLANE_INDEXER_ENABLED:-true}
+      CONTROL_PLANE_PROJECTIONS_ENABLED: ${CONTROL_PLANE_PROJECTIONS_ENABLED:-true}
+    ports:
+      - "${CONTROL_PLANE_API_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ipfs:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/v1/version').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${CONTROL_PLANE_POSTGRES_DB:-control-plane}
+      POSTGRES_USER: ${CONTROL_PLANE_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${CONTROL_PLANE_POSTGRES_PASSWORD:-secret}
+    ports:
+      - "${CONTROL_PLANE_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - control-plane-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${CONTROL_PLANE_POSTGRES_USER:-postgres} -d ${CONTROL_PLANE_POSTGRES_DB:-control-plane}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  ipfs:
+    image: ipfs/kubo:latest
+    environment:
+      IPFS_PROFILE: server
+      IPFS_TELEMETRY: "off"
+    ports:
+      - "${CONTROL_PLANE_IPFS_SWARM_PORT:-4001}:4001/tcp"
+      - "${CONTROL_PLANE_IPFS_SWARM_PORT:-4001}:4001/udp"
+      - "${CONTROL_PLANE_IPFS_API_PORT:-5001}:5001"
+      - "${CONTROL_PLANE_IPFS_GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - control-plane-ipfs-data:/data/ipfs
+    healthcheck:
+      test: ["CMD-SHELL", "ipfs id >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  control-plane-postgres-data:
+  control-plane-ipfs-data:

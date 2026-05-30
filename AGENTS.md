@@ -40,6 +40,7 @@ corepack pnpm projections:rebuild
 corepack pnpm test
 corepack pnpm test:e2e
 corepack pnpm build
+docker compose --env-file .env.docker -f docker-compose.local.yml config
 git diff --check
 ```
 
